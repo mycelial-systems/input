@@ -1,8 +1,30 @@
 {
   "name": "@substrate-system/input",
-  "type": "module",
   "version": "0.0.23",
+  "description": "Input web component",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./css": "./dist/index.css",
+    "./min/css": "./dist/index.min.css",
+    "./min/*": {
+      "import": "./dist/*.min.js",
+      "require": "./dist/*.min.cjs"
+    },
+    "./*": {
+      "import": "./dist/*.js",
+      "require": "./dist/*.cjs"
+    }
+  },
   "main": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "directories": {
+    "example": "example",
+    "test": "test"
+  },
   "files": [
     "./dist/*"
   ],
@@ -23,22 +45,6 @@
     "version": "npm run toc && auto-changelog -p --template keepachangelog --breaking-pattern 'BREAKING CHANGE:' && git add CHANGELOG.md README.md",
     "postversion": "git push --follow-tags && npm publish",
     "prepublishOnly": "npm run build"
-  },
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./css": "./dist/index.css",
-    "./min/css": "./dist/index.min.css",
-    "./min/*": {
-      "import": "./dist/*.min.js",
-      "require": "./dist/*.min.cjs"
-    },
-    "./*": {
-      "import": "./dist/*.js",
-      "require": "./dist/*.cjs"
-    }
   },
   "dependencies": {
     "@substrate-system/web-component": "^0.0.46"
@@ -67,6 +73,20 @@
     "vite": "^7.3.0",
     "vitest": "^4.0.18"
   },
-  "author": "nichoth <nichoth@nichoth.com> (https://nichoth.com)",
-  "license": "SEE LICENSE IN LICENSE"
+  "keywords": [
+    "input",
+    "html",
+    "web",
+    "component"
+  ],
+  "homepage": "https://github.com/substrate-system/input",
+  "bugs": {
+    "url": "https://github.com/substrate-system/input/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/substrate-system/input.git"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "nichoth <nichoth@nichoth.com> (https://nichoth.com)"
 }
