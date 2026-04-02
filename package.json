@@ -1,6 +1,6 @@
 {
   "name": "@substrate-system/input",
-  "version": "0.0.23",
+  "version": "0.0.24",
   "description": "Input web component",
   "type": "module",
   "exports": {
