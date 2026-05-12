@@ -75,6 +75,12 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
     }
 
     handleChange_inputAttribute (name:string, newValue:string|null) {
+        if (name === 'disabled') {
+            newValue === null ?
+                this.classList.remove('disabled') :
+                this.classList.add('disabled')
+        }
+
         const input = this.querySelector('input')
         if (!input) return
 
@@ -172,6 +178,12 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
                     ('=' + `"${attrValue}"`)))
             })
             .join(' ')
+
+        if (this.hasAttribute('disabled')) {
+            this.classList.add('disabled')
+        } else {
+            this.classList.remove('disabled')
+        }
 
         this.innerHTML = label ? `
         <div class="${classes}">
