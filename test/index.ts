@@ -2,6 +2,10 @@ import { test } from '@substrate-system/tapzero'
 import { waitFor } from '@substrate-system/dom'
 import '../src/index.js'
 
+type SubstrateInputHost = HTMLElement & {
+    value:string;
+}
+
 test('should find the element', async t => {
     document.body.innerHTML += `
         <substrate-input
@@ -70,6 +74,84 @@ test('should render label when label attribute is set', async t => {
     t.ok(label, 'should render a label element')
     t.equal(label?.textContent?.trim(), 'My Label',
         'label should have correct text')
+})
+
+test('host value setter updates the live inner value', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="value-setter" value="initial">' +
+        '</substrate-input>'
+
+    const host = await waitFor(
+        'substrate-input[name="value-setter"]'
+    ) as SubstrateInputHost
+    const input = host.querySelector('input') as HTMLInputElement
+
+    input.value = 'typed value'
+    host.value = ''
+
+    t.equal(input.value, '',
+        'setting host value should clear the live inner value')
+    t.equal(host.value, '',
+        'host getter should return the live inner value')
+})
+
+test('host value preserves a pre-connection value', async t => {
+    const host = document.createElement(
+        'substrate-input'
+    ) as SubstrateInputHost
+    host.setAttribute('name', 'pre-connection-value')
+    host.value = 'caregiver@example.com'
+
+    t.equal(host.getAttribute('value'), 'caregiver@example.com',
+        'pre-connection setter should preserve the host attribute')
+
+    document.body.appendChild(host)
+    const input = await waitFor(
+        'substrate-input[name="pre-connection-value"] input'
+    ) as HTMLInputElement
+
+    t.equal(input.value, 'caregiver@example.com',
+        'first render should consume the pre-connection value')
+})
+
+test('value attribute updates the live inner value', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="value-attribute" value="initial">' +
+        '</substrate-input>'
+
+    const host = await waitFor(
+        'substrate-input[name="value-attribute"]'
+    ) as SubstrateInputHost
+    const input = host.querySelector('input') as HTMLInputElement
+
+    input.value = 'typed value'
+    host.setAttribute('value', 'updated')
+    t.equal(input.value, 'updated',
+        'value attribute should update the live inner value')
+
+    host.removeAttribute('value')
+    t.equal(input.value, '',
+        'removing value should clear the live inner value')
+})
+
+test('non-value input attributes remain forwarded', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="non-value-forwarding" ' +
+        'value="initial"></substrate-input>'
+
+    const host = await waitFor(
+        'substrate-input[name="non-value-forwarding"]'
+    ) as SubstrateInputHost
+    const input = host.querySelector('input') as HTMLInputElement
+
+    input.value = 'typed value'
+    host.setAttribute('placeholder', 'caregiver@example.com')
+
+    t.equal(input.getAttribute('placeholder'),
+        'caregiver@example.com',
+        'placeholder should still be forwarded')
+    t.equal(input.value, 'typed value',
+        'forwarding another attribute should not change the value')
 })
 
 test('all done', () => {

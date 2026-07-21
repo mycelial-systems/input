@@ -84,6 +84,11 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         const input = this.querySelector('input')
         if (!input) return
 
+        if (name === 'value') {
+            input.value = newValue ?? ''
+            return
+        }
+
         if (newValue === null) {
             input.removeAttribute(name)
             return
@@ -135,6 +140,25 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
 
     get label ():string|null {
         return this.getAttribute('label')
+    }
+
+    set value (value:string) {
+        const normalized = String(value ?? '')
+
+        if (this.getAttribute('value') !== normalized) {
+            this.setAttribute('value', normalized)
+        }
+
+        const input = this.querySelector('input')
+        if (input && input.value !== normalized) {
+            input.value = normalized
+        }
+    }
+
+    get value ():string {
+        return this.querySelector('input')?.value ??
+            this.getAttribute('value') ??
+            ''
     }
 
     render () {
