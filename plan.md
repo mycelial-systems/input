@@ -1,610 +1,362 @@
-# Local SubstrateInput Value Patch Implementation Plan
+# Live SubstrateInput Value Contract Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use
 > superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add a local compatibility patch so controlled
-`<substrate-input>` elements update their inner native input's live value.
+**Goal:** Make controlled <substrate-input> values update the inner native
+input's live value after a user has typed.
 
-**Architecture:** Keep `@substrate-system/input` as the installed dependency,
-but expose it through one local adapter at `src/substrate-input.ts`. The
-adapter will add the missing `value` property contract to the upstream class
-prototype before any application input instances are created. All PetPulse
-imports will use the adapter, while the adapter remains safe with the simple
-custom-element mocks used by the Node and Worker tests.
+**Architecture:** Implement the contract in the SubstrateInput class in
+src/index.ts, which is the source of the published custom element. Add a
+public value getter and setter on the host element. Route the observed value
+attribute through the inner input's .value property while retaining the
+existing attribute-forwarding behavior for every other input attribute.
 
-**Tech Stack:** TypeScript, Custom Elements, Preact 10, HTM,
-`@preact/signals`, Vitest 4.
+**Tech Stack:** TypeScript, Custom Elements, @substrate-system/web-component,
+the browser-based @substrate-system/tapzero test harness, esbuild, and npm
+scripts.
 
 ---
 
 ## Background and boundaries
 
-The account route already runs this successful-state update:
+src/index.ts currently lists value in INPUT_ATTRIBUTES, so the host observes
+changes to the attribute. Its handleChange_inputAttribute method currently
+forwards every input attribute with setAttribute. For a native input whose
+value has been changed by the user, changing the value attribute updates the
+default value but does not replace the live .value property.
 
-```ts
-inviteEmail.value = ''
-```
+The fix belongs in this package because this repository publishes the
+substrate-input custom element. Do not add an application adapter,
+route-specific DOM lookup, keyed remount, form.reset(), or a dependency
+override. Do not change the custom-element tag name or registration model.
 
-That signal update is correct. The problem is the current
-`@substrate-system/input@0.0.22` class:
-
-1. It does not expose a `value` property on the custom-element host.
-2. Preact therefore writes `value` as an attribute on the host.
-3. The component forwards that attribute with
-   `input.setAttribute('value', newValue)`.
-4. Once a user has typed, the native input's live value is dirty. Updating
-   its attribute changes `defaultValue`, but does not replace the visible
-   `input.value`.
-
-The patch must correct the reusable custom-element contract. Do not add a
-route-specific `querySelector`, force a keyed remount, call `form.reset()`,
-or move local form state into global application state.
-
-The local adapter should continue exporting the exact upstream class. It
-must not register a second custom-element tag or subclass the upstream class,
-because the dependency registers `substrate-input` as a side effect of being
-imported.
-
-No LLP corpus exists in this repository, so there are no additional LLP
-constraints to apply. The relevant repository rules are in `AGENTS.md`,
-especially the component-test mock requirements and the full-suite warning
-for widely shared custom-element imports.
+The existing test harness runs in a browser-like environment and imports
+src/index.ts directly. Keep the tests in that harness; do not introduce a
+Vitest project or a DOM shim.
 
 ### Expected behavior
 
-- Setting the host's `value` property updates the inner input's live
-  `.value` immediately.
-- Reading the host's `value` returns the inner input's live value.
-- Setting `value` before `connectedCallback()` preserves the initial value
-  so the upstream renderer can create the inner input correctly.
-- Updating the host's `value` attribute also updates the live inner value.
-- Non-value input attributes continue through the upstream forwarding
-  implementation unchanged.
-- Existing `{ TAG, define }` test mocks remain valid.
-- The account invitation field clears after a successful send and retains
-  its value after an unsuccessful send.
+- Reading host.value returns the inner input's live value when connected.
+- Reading host.value before rendering falls back to the host attribute.
+- Setting host.value updates the inner input's live .value immediately.
+- Setting host.value before connection preserves the initial value for the
+  first render.
+- Setting or removing the host value attribute updates the live inner value.
+- Non-value input attributes keep their current forwarding behavior.
+- Existing label, id, ARIA, disabled, and input rendering behavior remains
+  unchanged.
 
-## Task 1: Add a failing unit test for the value contract
+## Task 1: Add failing browser regression tests
 
 **Files:**
 
-- Create: `test/unit/substrate-input-value.spec.ts`
-- Test target: `src/substrate-input.ts`
+- Modify: test/index.ts
+- Test target: src/index.ts
 
-### Step 1: Write the upstream-shaped test double
+### Step 1: Add a typed host helper
 
-Create a plain Node test. Mock `@substrate-system/input` before importing the
-local adapter so the test does not require `document` or `customElements`.
-The test double must retain the upstream bug: its attribute forwarder should
-write attributes, not the native input's live value.
+After the existing imports, add a small structural type for the public value
+contract. Keep the test compatible with the existing document and waitFor
+setup:
 
-```ts
-import { describe, expect, it, vi } from 'vitest'
-
-vi.mock('@substrate-system/input', () => {
-    class FakeSubstrateInput {
-        static TAG = 'substrate-input'
-        static define = () => {}
-
-        attributes = new Map<string, string>()
-        input:FakeInnerInput|null = null
-
-        getAttribute (name:string):string|null {
-            return this.attributes.get(name) ?? null
-        }
-
-        setAttribute (name:string, value:string):void {
-            this.attributes.set(name, value)
-            this.handleChange_inputAttribute(name, value)
-        }
-
-        removeAttribute (name:string):void {
-            this.attributes.delete(name)
-            this.handleChange_inputAttribute(name, null)
-        }
-
-        querySelector (selector:string):FakeInnerInput|null {
-            return selector === 'input' ? this.input : null
-        }
-
-        handleChange_inputAttribute (
-            name:string,
-            newValue:string|null,
-        ):void {
-            if (!this.input) return
-            if (newValue === null) {
-                this.input.attributes.delete(name)
-                return
-            }
-
-            this.input.attributes.set(name, newValue)
-        }
+    type SubstrateInputHost = HTMLElement & {
+        value:string;
     }
 
-    return { SubstrateInput: FakeSubstrateInput }
-})
+Use a cast at the point where a queried custom element is read. Do not import
+an additional test framework or add a new test entry point.
 
-import {
-    SubstrateInput,
-} from '../../src/substrate-input.js'
+### Step 2: Write the failing live-value tests
 
-type FakeInnerInput = {
-    value:string;
-    attributes:Map<string, string>;
-}
+Add a test that proves a dirty native input is cleared through the host
+property. Use a unique name attribute and append the element to document.body:
 
-type FakeHost = {
-    input:FakeInnerInput|null;
-    value:string;
-    getAttribute:(name:string) => string|null;
-    setAttribute:(name:string, value:string) => void;
-    handleChange_inputAttribute:(
-        name:string,
-        newValue:string|null,
-    ) => void;
-}
+    test('host value setter updates the live inner value', async t => {
+        document.body.innerHTML +=
+            '<substrate-input name="value-setter" value="initial">' +
+            '</substrate-input>'
 
-function host ():FakeHost {
-    const Constructor = SubstrateInput as unknown as {
-        new():FakeHost;
-    }
-    return new Constructor()
-}
+        const host = await waitFor(
+            'substrate-input[name="value-setter"]'
+        ) as SubstrateInputHost
+        const input = host.querySelector('input') as HTMLInputElement
 
-function innerInput (value:string):FakeInnerInput {
-    return {
-        value,
-        attributes: new Map<string, string>(),
-    }
-}
-```
+        input.value = 'typed value'
+        host.value = ''
 
-### Step 2: Add the regression assertions
-
-Add four focused cases:
-
-```ts
-describe('local SubstrateInput value patch', () => {
-    it('clears the live inner value after the user has typed', () => {
-        const element = host()
-        element.input = innerInput('caregiver@example.com')
-
-        element.value = ''
-
-        expect(element.input?.value).toBe('')
+        t.equal(input.value, '',
+            'setting host value should clear the live inner value')
+        t.equal(host.value, '',
+            'host getter should return the live inner value')
     })
 
-    it('preserves a value assigned before the inner input exists', () => {
-        const element = host()
+Add a test for setting the property before the element is connected:
 
-        element.value = 'caregiver@example.com'
+    test('host value preserves a pre-connection value', async t => {
+        const host = document.createElement(
+            'substrate-input'
+        ) as SubstrateInputHost
+        host.setAttribute('name', 'pre-connection-value')
+        host.value = 'caregiver@example.com'
 
-        expect(element.getAttribute('value'))
-            .toBe('caregiver@example.com')
-        expect(element.value).toBe('caregiver@example.com')
+        t.equal(host.getAttribute('value'), 'caregiver@example.com',
+            'pre-connection setter should preserve the host attribute')
+
+        document.body.appendChild(host)
+        const input = await waitFor(
+            'substrate-input[name="pre-connection-value"] input'
+        ) as HTMLInputElement
+
+        t.equal(input.value, 'caregiver@example.com',
+            'first render should consume the pre-connection value')
     })
 
-    it('updates the live value when the observed attribute changes', () => {
-        const element = host()
-        element.input = innerInput('typed value')
+Add a test for direct attribute updates and removal:
 
-        element.handleChange_inputAttribute('value', '')
+    test('value attribute updates the live inner value', async t => {
+        document.body.innerHTML +=
+            '<substrate-input name="value-attribute" value="initial">' +
+            '</substrate-input>'
 
-        expect(element.input?.value).toBe('')
+        const host = await waitFor(
+            'substrate-input[name="value-attribute"]'
+        ) as SubstrateInputHost
+        const input = host.querySelector('input') as HTMLInputElement
+
+        input.value = 'typed value'
+        host.setAttribute('value', 'updated')
+        t.equal(input.value, 'updated',
+            'value attribute should update the live inner value')
+
+        host.removeAttribute('value')
+        t.equal(input.value, '',
+            'removing value should clear the live inner value')
     })
 
-    it('keeps upstream forwarding for non-value attributes', () => {
-        const element = host()
-        element.input = innerInput('typed value')
+Add a test proving unrelated attributes still use the existing forwarder:
 
-        element.handleChange_inputAttribute(
-            'placeholder',
+    test('non-value input attributes remain forwarded', async t => {
+        document.body.innerHTML +=
+            '<substrate-input name="non-value-forwarding" ' +
+            'value="initial"></substrate-input>'
+
+        const host = await waitFor(
+            'substrate-input[name="non-value-forwarding"]'
+        ) as SubstrateInputHost
+        const input = host.querySelector('input') as HTMLInputElement
+
+        input.value = 'typed value'
+        host.setAttribute('placeholder', 'caregiver@example.com')
+
+        t.equal(input.getAttribute('placeholder'),
             'caregiver@example.com',
-        )
-
-        expect(element.input.attributes.get('placeholder'))
-            .toBe('caregiver@example.com')
-        expect(element.input?.value).toBe('typed value')
+            'placeholder should still be forwarded')
+        t.equal(input.value, 'typed value',
+            'forwarding another attribute should not change the value')
     })
-})
-```
 
-Add one more assertion to the first test after the initial red run:
-
-```ts
-expect(element.value).toBe('')
-```
-
-This proves the getter follows the live inner value, not a stale host
-attribute.
-
-### Step 3: Run the test and verify RED
+### Step 3: Run the tests and verify RED
 
 Run:
 
-```bash
-npx vitest run --project unit \
-    test/unit/substrate-input-value.spec.ts
-```
+    npm test
 
-Expected: FAIL because `src/substrate-input.ts` does not exist. If a skeleton
-adapter was created first, expect the first test to fail because the inner
-value remains `caregiver@example.com`.
+Expected: the existing tests pass, and the new live-value assertions fail
+because SubstrateInput has no host value property and still forwards the value
+attribute with setAttribute.
 
-Do not proceed if the test passes before the patch exists.
+If the test command cannot find dependencies, run npm install once and rerun
+npm test. Do not change source code to work around a missing install. Do not
+proceed until the new tests fail for the missing behavior rather than because
+of a test typo or harness error.
 
-## Task 2: Implement the local compatibility adapter
+## Task 2: Implement the live value contract
 
 **Files:**
 
-- Create: `src/substrate-input.ts`
-- Test: `test/unit/substrate-input-value.spec.ts`
+- Modify: src/index.ts
+- Test: test/index.ts
 
-### Step 1: Add the adapter
+### Step 1: Update value attribute handling
 
-Create the following local module. Keep every line below 80 columns.
+In handleChange_inputAttribute, preserve the existing disabled-class logic
+and the early return when no inner input exists. After obtaining the input,
+handle name === 'value' with the live property:
 
-```ts
-import {
-    SubstrateInput as UpstreamSubstrateInput,
-} from '@substrate-system/input'
-
-type InputHost = InstanceType<typeof UpstreamSubstrateInput> & {
-    value:string;
-}
-
-type InputPrototype = InputHost & {
-    handleChange_inputAttribute:(
-        name:string,
-        newValue:string|null,
-    ) => void;
-}
-
-function innerInput (host:Element):HTMLInputElement|null {
-    return host.querySelector('input')
-}
-
-export function patchSubstrateInputValue ():void {
-    const prototype = (
-        UpstreamSubstrateInput.prototype
-    ) as InputPrototype | undefined
-
-    // Several tests replace the package class with a simple { TAG, define }
-    // object. Keep that established mock contract working.
-    if (!prototype) return
-
-    // An upstream release may eventually provide the correct contract.
-    // In that case, leave its implementation untouched.
-    if (Object.getOwnPropertyDescriptor(prototype, 'value')) return
-
-    const forwardInputAttribute =
-        prototype.handleChange_inputAttribute
-
-    prototype.handleChange_inputAttribute = function (
-        name:string,
-        newValue:string|null,
-    ):void {
-        if (name === 'value') {
-            const input = innerInput(this)
-            if (input) input.value = newValue ?? ''
-            return
-        }
-
-        forwardInputAttribute.call(this, name, newValue)
+    if (name === 'value') {
+        input.value = newValue ?? ''
+        return
     }
 
-    Object.defineProperty(prototype, 'value', {
-        configurable: true,
-        get (this:InputHost):string {
-            return innerInput(this)?.value ??
-                this.getAttribute('value') ??
-                ''
-        },
-        set (this:InputHost, value:string) {
-            const normalized = String(value ?? '')
+Keep the existing removeAttribute and setAttribute forwarding branches for
+all other input attributes.
 
-            if (this.getAttribute('value') !== normalized) {
-                this.setAttribute('value', normalized)
-            }
+### Step 2: Add the host getter and setter
 
-            const input = innerInput(this)
-            if (input && input.value !== normalized) {
-                input.value = normalized
-            }
-        },
-    })
-}
+Add the following accessors to SubstrateInput, near the existing label
+accessor. Keep the setter string-compatible with native input values and
+normalize nullish runtime values to the empty string:
 
-patchSubstrateInputValue()
+    set value (value:string) {
+        const normalized = String(value ?? '')
 
-export {
-    UpstreamSubstrateInput as SubstrateInput,
-}
-```
+        if (this.getAttribute('value') !== normalized) {
+            this.setAttribute('value', normalized)
+        }
 
-The two write paths are intentional:
+        const input = this.querySelector('input')
+        if (input && input.value !== normalized) {
+            input.value = normalized
+        }
+    }
 
-- Before connection, there is no inner input, so the setter reflects the
-  value to the host attribute. The upstream `render()` can then consume it.
-- After connection, the setter writes the inner input's `.value` property.
-  That is the operation which clears a dirty native input.
+    get value ():string {
+        return this.querySelector('input')?.value ??
+            this.getAttribute('value') ??
+            ''
+    }
 
-The patched `handleChange_inputAttribute` also repairs callers that use
-`setAttribute('value', ...)` directly. It delegates every other attribute to
-the original upstream method.
+The setter writes the host attribute when necessary so an unconnected
+element's first render can consume the value. It also writes the native
+property directly so a connected, dirty input changes immediately. The
+attribute-change handler covers direct setAttribute and removeAttribute calls.
 
-### Step 2: Verify GREEN
+### Step 3: Run the focused test and verify GREEN
 
 Run:
 
-```bash
-npx vitest run --project unit \
-    test/unit/substrate-input-value.spec.ts
-```
+    npm test
 
-Expected: all four tests PASS.
+Expected: all existing and new tests pass with no failures. If a test fails,
+fix the implementation rather than weakening the assertion.
 
-### Step 3: Type-check the adapter
+### Step 4: Run type and lint checks
 
-Run:
+This repository does not define typecheck or test:typecheck npm scripts. Use
+the project tools directly:
 
-```bash
-npm run typecheck
-npm run test:typecheck
-```
+    npx tsc --noEmit
+    npm run lint
 
-Expected: both commands exit 0 with no TypeScript diagnostics.
+Expected: both commands exit 0 with no TypeScript diagnostics or lint errors.
 
-If TypeScript rejects the mocked constructor cast, fix only the test-side
-cast. Do not weaken the production adapter with `any`.
+### Step 5: Commit the implementation
 
-### Step 4: Commit the contract patch
+Review the diff, then commit only the source and test changes:
 
-```bash
-git add src/substrate-input.ts \
-    test/unit/substrate-input-value.spec.ts
-git commit -m "fix: synchronize substrate input values"
-```
+    git diff --check
+    git add src/index.ts test/index.ts
+    git commit -m "fix: synchronize substrate input values"
 
-## Task 3: Route every production import through the adapter
+## Task 3: Document the public value behavior
 
 **Files:**
 
-- Modify: `src/client/index.ts`
-- Modify: `src/client/routes/account.ts`
-- Modify: `src/client/routes/new-pet.ts`
-- Modify: `src/client/routes/notification-settings.ts`
-- Modify: `src/client/routes/pet-detail.ts`
-- Modify: `src/client/routes/profile.ts`
-- Modify: `src/client/routes/signup-passkey.ts`
-- Modify: `src/client/routes/signup.ts`
-- Modify: `src/client/components/routine-form.ts`
-- Modify: `src/client/components/sms-consent-modal.ts`
-- Modify: `src/client/components/username-editor.ts`
-- Modify: `src/webmaster/routes/pages.ts`
-- Modify: `AGENTS.md`
+- Modify: README.md
 
-### Step 1: Replace direct production imports
+### Step 1: Update the API documentation
 
-Replace every production import of:
+In the input element attributes section, clarify that value is forwarded to
+the inner input and that the component exposes a live host property. Add a
+short paragraph after the attribute list:
 
-```ts
-import { SubstrateInput } from '@substrate-system/input'
-```
+    The value property on <substrate-input> reads and writes the inner native
+    input's live value. This makes controlled updates work after a user has
+    typed, while the value attribute still supplies the initial value during
+    render.
 
-with the correct relative path to `src/substrate-input.ts`:
+Keep the documentation accurate for both markup and JavaScript consumers.
+Do not change the package install instructions or CSS documentation.
 
-- From `src/client/index.ts`, use `../substrate-input.js`.
-- From `src/client/routes/*.ts`, use `../../substrate-input.js`.
-- From `src/client/components/*.ts`, use `../../substrate-input.js`.
-- From `src/webmaster/routes/pages.ts`, use
-  `../../substrate-input.js`.
-
-Do not change CSS imports such as `@substrate-system/input/css`. The local
-adapter patches behavior only and continues using the dependency's existing
-styles.
-
-Do not rewrite test mocks. The adapter's `if (!prototype) return` guard is
-specifically intended to preserve the existing `{ TAG, define }` mock shape.
-
-### Step 2: Prove there are no bypasses
+### Step 2: Check documentation formatting
 
 Run:
 
-```bash
-rg -n "from '@substrate-system/input'" src \
-    --glob '*.ts'
-```
+    git diff --check
 
-Expected: exactly one match, inside `src/substrate-input.ts`.
+Expected: no output. Keep changed lines below 80 columns in source, tests,
+and documentation, following the repository working agreement.
 
-Also run:
+### Step 3: Commit the documentation
 
-```bash
-rg -n "@substrate-system/input/css" src test \
-    --glob '*.{ts,js}'
-```
+    git add README.md
+    git commit -m "docs: describe live substrate input values"
 
-Expected: existing stylesheet imports, if any, remain unchanged.
-
-### Step 3: Document the compatibility boundary
-
-Add this rule to the SPA component guidance in `AGENTS.md`:
-
-```md
-- Import `SubstrateInput` through `src/substrate-input.ts`, not directly
-  from `@substrate-system/input`. The local adapter supplies the missing
-  live `value` property contract in `@substrate-system/input@0.0.22`, so
-  Preact signal updates also update the inner native input after typing.
-  The adapter intentionally no-ops when a future upstream release defines
-  its own `value` property. Last reviewed 2026-07-20.
-```
-
-Keep the added lines below 80 columns.
-
-### Step 4: Run focused component tests
-
-Run the tests whose import graphs include the changed modules:
-
-```bash
-npx vitest run --project unit \
-    test/unit/substrate-input-value.spec.ts \
-    test/unit/username-editor-component.spec.ts \
-    test/unit/routine-form-dirty.spec.ts
-```
-
-Then run the affected Worker-project route tests:
-
-```bash
-npx vitest run --project workers \
-    test/signup-route.spec.ts \
-    test/new-pet-route.spec.ts \
-    test/notification-settings-sms-states.spec.ts \
-    test/webmaster-login-ui.spec.ts
-```
-
-Expected: all selected tests PASS. A `document is not defined` error means a
-transitive spec lacks its established `@substrate-system/input` mock. Add the
-same `{ TAG, define }` stub already used elsewhere; do not add a DOM shim.
-
-### Step 5: Commit the import migration and guidance
-
-```bash
-git add AGENTS.md src/client src/webmaster/routes/pages.ts
-git commit -m "refactor: use local substrate input adapter"
-```
-
-## Task 4: Verify the account invitation regression
+## Task 4: Run the complete package verification
 
 **Files:**
 
-- Verify: `src/client/routes/account.ts`
-- Verify: `src/substrate-input.ts`
-- Test: `test/unit/substrate-input-value.spec.ts`
+- Verify: src/index.ts
+- Verify: test/index.ts
+- Verify: README.md
 
-### Step 1: Confirm the route keeps the declarative state update
-
-Inspect `onInviteSubmit` and verify that the successful branch still sets:
-
-```ts
-inviteEmail.value = ''
-```
-
-It must remain after both `State.inviteAccountUser(...)` and
-`State.fetchAccountSettings()` succeed. The error branch must not clear the
-signal.
-
-Do not add a ref, `querySelector`, key counter, or `form.reset()` to this
-route. The local custom-element contract is now responsible for reflecting
-the controlled value.
-
-### Step 2: Run all fast tests
+### Step 1: Run the browser test suite
 
 Run:
 
-```bash
-npm run test:unit
-```
+    npm test
 
-Expected: the `style-guards` and `unit` projects both pass.
+Expected: every tapzero test passes, including the value contract tests.
 
-### Step 3: Run the full Miniflare superset
+### Step 2: Run static checks
 
 Run:
 
-```bash
-npm test
-```
+    npx tsc --noEmit
+    npm run lint
+    git diff --check
 
-Expected: every Vitest project passes. This full run is required because the
-adapter becomes a widely shared custom-element import and the fast suite does
-not cover every transitive Worker-project import.
+Expected: every command exits 0 and git diff --check prints nothing.
 
-### Step 4: Run static and build verification
+### Step 3: Run the package build
 
 Run:
 
-```bash
-npm run lint
-npm run typecheck
-npm run test:typecheck
-npm run build
-git diff --check
-```
+    npm run build
 
-Expected: every command exits 0. `git diff --check` must print nothing.
+Expected: CommonJS, ESM, declaration, minified ESM, and CSS artifacts build
+successfully. Build output is generated under dist/; do not commit it unless
+the repository's existing release workflow requires tracked artifacts.
 
-Also enforce the repository line-length agreement on changed source and test
-files:
+### Step 4: Enforce line length on changed files
 
-```bash
-awk 'length($0) >= 80 { print FNR ":" length($0) ":" $0 }' \
-    src/substrate-input.ts \
-    test/unit/substrate-input-value.spec.ts
-```
+Run:
 
-Expected: no output. If the repository interprets the agreement as allowing
-exactly 79 characters, use `>= 80` as shown.
+    awk 'length($0) >= 80 { print FNR ":" length($0) ":" $0 }' \
+        src/index.ts test/index.ts README.md
 
-### Step 5: Perform one browser-level smoke test
+Expected: no output. Wrap any reported lines without changing behavior.
 
-Start the local application:
+### Step 5: Inspect the final diff and status
 
-```bash
-npm start
-```
+Run:
 
-In an authenticated account-admin session:
+    git diff HEAD~2..HEAD --stat
+    git status --short
 
-1. Open `/account`.
-2. Enter a valid caregiver email.
-3. Click **Send Invitation**.
-4. Wait for the green success message and refreshed pending list.
-5. Confirm the visible email field is empty.
-6. In DevTools, evaluate:
+Expected: the two implementation commits contain only the intended source,
+test, and README changes. Generated build output and temporary files should
+not be included.
 
-   ```js
-   document.querySelector(
-       '.account-settings__form substrate-input input'
-   )?.value
-   ```
-
-7. Confirm the result is `''`.
-
-For the preservation path, submit an address that the server rejects and
-confirm the typed value stays visible so the user can correct or retry it.
-
-Stop the development server after the check.
-
-## Task 5: Record the upstream retirement condition
+## Task 5: Record and preserve the retirement condition
 
 **Files:**
 
-- Verify: `src/substrate-input.ts`
-- Verify: `AGENTS.md`
+- Verify: src/index.ts
+- Verify: README.md
 
-The patch is intentionally temporary. When upgrading
-`@substrate-system/input`, inspect the new class before removing it:
+The value contract is now part of this package rather than a downstream
+compatibility adapter. When changing the implementation or upgrading
+@substrate-system/web-component, preserve these two behaviors:
 
-```bash
-rg -n "get value|set value|handleChange_inputAttribute" \
-    node_modules/@substrate-system/input/dist/index.js
-```
+1. A host value getter/setter reads and writes the inner input's live .value
+   property.
+2. Observed value attribute changes update the live inner value after typing,
+   including removal of the attribute.
 
-Remove the adapter only when upstream provides both behaviors:
-
-1. A host `value` getter/setter that reads and writes the inner input's live
-   `.value` property.
-2. Live updates when the observed `value` attribute changes after typing.
-
-Before deleting the local patch, temporarily point production imports back
-to the package and run
-`test/unit/substrate-input-value.spec.ts` against the real upstream class in
-a DOM-capable test environment. Keep the local test until that upstream
-behavior has been verified.
-
-No `package.json` override, copied `node_modules` artifact, or
-`patch-package` postinstall hook should be added for this fix. Those options
-would hide the behavior change in dependency installation and make the patch
-harder to type-check and test within the application.
+Before changing or removing the accessors, add or update tests in
+test/index.ts, run npm test, npx tsc --noEmit, npm run lint, and npm run build,
+and confirm that initial render and controlled updates still work. No
+application-level adapter, package override, copied dependency, or
+postinstall patch is needed for this repository.
