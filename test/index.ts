@@ -217,6 +217,33 @@ test('render does not let values escape an attribute', async t => {
         'host should contain only the wrapper and input')
 })
 
+test('render skips attribute names setAttribute rejects', async t => {
+    // older engines reject names like `@click` that the parser accepts
+    const original = HTMLInputElement.prototype.setAttribute
+    HTMLInputElement.prototype.setAttribute = function (name, value) {
+        if (name === '@click') {
+            throw new DOMException('invalid name', 'InvalidCharacterError')
+        }
+        return original.call(this, name, value)
+    }
+
+    try {
+        document.body.innerHTML +=
+            '<substrate-input name="odd-attr" id="odd-attr-input" ' +
+            '@click="noop"></substrate-input>'
+    } finally {
+        HTMLInputElement.prototype.setAttribute = original
+    }
+
+    const host = await waitFor('substrate-input[name="odd-attr"]')
+    const input = host!.querySelector('input')
+    t.ok(input, 'should still render the inner input')
+    t.equal(input?.getAttribute('name'), 'odd-attr',
+        'other attributes should still be forwarded')
+    t.ok(!host!.hasAttribute('id'),
+        'host id should still be delegated')
+})
+
 test('all done', () => {
     // @ts-expect-error tests
     window.testsFinished = true

@@ -1,6 +1,6 @@
 import { WebComponent } from '@substrate-system/web-component'
 import { define } from '@substrate-system/web-component/util'
-import { ARIA_ATTRIBUTES, INPUT_ATTRIBUTES } from './util'
+import { ARIA_ATTRIBUTES, INPUT_ATTRIBUTES } from './util.js'
 
 // for document.querySelector
 declare global {
@@ -205,7 +205,11 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
             input.setAttribute(attrName, attrValue)
         }
         for (const attr of forwardedAttributes) {
-            input.setAttribute(attr.name, attr.value)
+            try {
+                input.setAttribute(attr.name, attr.value)
+            } catch (_err) {
+                // some engines reject names the parser allows, like `@click`
+            }
         }
         input.setAttribute('type', this.getAttribute('type') || 'text')
 
