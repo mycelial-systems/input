@@ -154,6 +154,96 @@ test('non-value input attributes remain forwarded', async t => {
         'forwarding another attribute should not change the value')
 })
 
+test('render does not interpret values as markup', async t => {
+    const quoted = 'My "work" <laptop>'
+    const payload = '"><img src=x onerror="window.__xss = true">'
+
+    const host = document.createElement('substrate-input')
+    host.setAttribute('name', 'escaping')
+    host.setAttribute('value', quoted)
+    host.setAttribute('placeholder', payload)
+    host.setAttribute('aria-label', quoted)
+    host.setAttribute('label', payload)
+    document.body.appendChild(host)
+
+    const input = await waitFor(
+        'substrate-input[name="escaping"] input'
+    ) as HTMLInputElement
+
+    t.equal(input.value, quoted, 'live value should match exactly')
+    t.equal(input.getAttribute('value'), quoted,
+        'value attribute should match exactly')
+    t.equal(input.getAttribute('placeholder'), payload,
+        'placeholder should match exactly')
+    t.equal(input.getAttribute('aria-label'), quoted,
+        'aria-label should match exactly')
+    t.equal(host.querySelector('label')?.textContent, payload,
+        'label text should match the label attribute exactly')
+    t.equal(host.querySelectorAll('img').length, 0,
+        'no injected elements')
+    t.equal(host.querySelectorAll('*').length, 3,
+        'host should contain only the wrapper, label, and input')
+})
+
+test('render does not let values escape an attribute', async t => {
+    const breakout = 'x" onfocus="window.__xss = true'
+
+    const host = document.createElement(
+        'substrate-input'
+    ) as SubstrateInputHost
+    host.setAttribute('name', 'breakout')
+    host.setAttribute('id', breakout)
+    host.setAttribute('class', breakout)
+    host.setAttribute('required', '')
+    host.value = breakout
+    document.body.appendChild(host)
+
+    const input = await waitFor(
+        'substrate-input[name="breakout"] input'
+    ) as HTMLInputElement
+    const wrapper = host.firstElementChild as HTMLElement
+
+    t.equal(input.value, breakout,
+        'pre-connection value should survive render exactly')
+    t.equal(input.getAttribute('id'), breakout,
+        'delegated id should match exactly')
+    t.ok(!input.hasAttribute('onfocus'),
+        'input should not gain an injected attribute')
+    t.ok(!wrapper.hasAttribute('onfocus'),
+        'wrapper should not gain an injected attribute')
+    t.ok(input.hasAttribute('required'),
+        'empty-valued boolean attributes should still be forwarded')
+    t.equal(host.querySelectorAll('*').length, 2,
+        'host should contain only the wrapper and input')
+})
+
+test('render skips attribute names setAttribute rejects', async t => {
+    // older engines reject names like `@click` that the parser accepts
+    const original = HTMLInputElement.prototype.setAttribute
+    HTMLInputElement.prototype.setAttribute = function (name, value) {
+        if (name === '@click') {
+            throw new DOMException('invalid name', 'InvalidCharacterError')
+        }
+        return original.call(this, name, value)
+    }
+
+    try {
+        document.body.innerHTML +=
+            '<substrate-input name="odd-attr" id="odd-attr-input" ' +
+            '@click="noop"></substrate-input>'
+    } finally {
+        HTMLInputElement.prototype.setAttribute = original
+    }
+
+    const host = await waitFor('substrate-input[name="odd-attr"]')
+    const input = host!.querySelector('input')
+    t.ok(input, 'should still render the inner input')
+    t.equal(input?.getAttribute('name'), 'odd-attr',
+        'other attributes should still be forwarded')
+    t.ok(!host!.hasAttribute('id'),
+        'host id should still be delegated')
+})
+
 test('all done', () => {
     // @ts-expect-error tests
     window.testsFinished = true
