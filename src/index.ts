@@ -176,17 +176,12 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         }
 
         const name = this.getAttribute('name')
-        const attrs = Array.from(this.attributes)
+        const forwardedAttributes = Array.from(this.attributes)
             .filter(attr =>
                 attr.name !== 'label' &&
                 attr.name !== 'id' &&
                 !attr.name.startsWith('aria-')
             )
-            .map(attr => attr.name + (attr.value === '' ?
-                '' :
-                ('=' + `"${attr.value}"`))
-            )
-            .join(' ')
 
         const classes = (this.getAttribute('class') ?? '').split(' ')
             .concat(['substrate', 'input', name || ''])
@@ -194,14 +189,6 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
             .join(' ')
 
         const inputId = this.getInputIdForRender()
-        const renderedIdAttribute = `id="${inputId}"`
-        const ariaAttributes = Object.entries(this.inputAriaAttributes)
-            .map(([attrName, attrValue]) => {
-                return (attrName + (attrValue === '' ?
-                    '' :
-                    ('=' + `"${attrValue}"`)))
-            })
-            .join(' ')
 
         if (this.hasAttribute('disabled')) {
             this.classList.add('disabled')
@@ -209,18 +196,32 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
             this.classList.remove('disabled')
         }
 
-        this.innerHTML = label ? `
-        <div class="${classes}">
-            <label class="label-content" for="${inputId}">${label}</label>
-            <input ${renderedIdAttribute} ${ariaAttributes} ${attrs}
-                type="${this.getAttribute('type') || 'text'}"
-            />
-            </div>` :
-        `<div class="${classes}">
-            <input ${renderedIdAttribute} ${ariaAttributes} ${attrs}
-                type="${this.getAttribute('type') || 'text'}"
-            />
-        </div>`
+        // build with DOM APIs so attribute values are never parsed as HTML
+        const input = document.createElement('input')
+        input.setAttribute('id', inputId)
+        for (const [attrName, attrValue] of Object.entries(
+            this.inputAriaAttributes
+        )) {
+            input.setAttribute(attrName, attrValue)
+        }
+        for (const attr of forwardedAttributes) {
+            input.setAttribute(attr.name, attr.value)
+        }
+        input.setAttribute('type', this.getAttribute('type') || 'text')
+
+        const wrapper = document.createElement('div')
+        wrapper.setAttribute('class', classes)
+
+        if (label) {
+            const labelEl = document.createElement('label')
+            labelEl.className = 'label-content'
+            labelEl.htmlFor = inputId
+            labelEl.textContent = label
+            wrapper.appendChild(labelEl)
+        }
+
+        wrapper.appendChild(input)
+        this.replaceChildren(wrapper)
 
         if (this.hasAttribute('id')) {
             this.ignoredIdCallback = true
