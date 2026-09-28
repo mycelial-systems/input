@@ -61,6 +61,35 @@ test('should delegate aria attributes to inner input', async t => {
         'host element should not retain aria attributes')
 })
 
+test('aria attributes survive upgrade when after label', async t => {
+    // upgrade queues a callback per attribute; label renders first
+    document.body.innerHTML +=
+        '<substrate-input name="aria-after-label" label="Label" ' +
+        'aria-invalid="true"></substrate-input>'
+
+    const el = await waitFor('substrate-input[name="aria-after-label"]')
+    const input = el!.querySelector('input')
+    t.equal(input?.getAttribute('aria-invalid'), 'true',
+        'inner input should keep aria-invalid')
+    t.ok(!el!.hasAttribute('aria-invalid'),
+        'host element should not retain aria-invalid')
+})
+
+test('id survives upgrade when after label', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="id-after-label" label="Label" ' +
+        'id="id-after-label"></substrate-input>'
+
+    const el = await waitFor('substrate-input[name="id-after-label"]')
+    const input = el!.querySelector('input')
+    t.equal(input?.getAttribute('id'), 'id-after-label',
+        'inner input should keep the delegated id')
+    t.equal(el!.querySelector('label')?.htmlFor, 'id-after-label',
+        'label should point at the inner input')
+    t.ok(!el!.hasAttribute('id'),
+        'host element should not retain the id attribute')
+})
+
 test('should render label when label attribute is set', async t => {
     document.body.innerHTML += `
         <substrate-input
