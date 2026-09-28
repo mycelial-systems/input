@@ -33,7 +33,9 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         _oldValue:string|null,
         newValue:string|null
     ) {
-        if (this.ignoredAriaCallbackNames.has(name)) {
+        // Only skip the removal we caused. During upgrade a stale
+        // `null -> value` callback can arrive before it.
+        if (newValue === null && this.ignoredAriaCallbackNames.has(name)) {
             this.ignoredAriaCallbackNames.delete(name)
             return
         }
@@ -54,7 +56,8 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
     }
 
     handleChange_id (_oldValue:string|null, newValue:string|null) {
-        if (this.ignoredIdCallback) {
+        // Only skip the removal we caused; see handleChange_aria
+        if (newValue === null && this.ignoredIdCallback) {
             this.ignoredIdCallback = false
             return
         }
