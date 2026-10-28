@@ -86,3 +86,14 @@ export const INPUT_ATTRIBUTES = [
     'type',
     'value'
 ]
+
+/**
+ * Attributes that describe the focusable control. They mean something on
+ * the host too (a second tab stop, a prohibited aria-label), so they move
+ * to the inner input instead of being mirrored. Every `aria-*` moves too.
+ */
+export const MOVED_ATTRIBUTES = [
+    'id',
+    'autofocus',
+    'tabindex'
+]

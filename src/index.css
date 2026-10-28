@@ -16,12 +16,15 @@ substrate-input {
             padding: 1rem;
             padding-bottom: 0.8rem;
             width: 100%;
-            border: 1px solid;
-            border-radius: 0;
-            outline: 1px solid transparent;
+            color: var(--substrate-text, FieldText);
+            background-color: var(--substrate-surface, Field);
+            border: 1px solid var(--substrate-border, currentcolor);
+            border-radius: var(--substrate-radius, 0);
+            outline: var(--substrate-focus-width, 2px) solid transparent;
+            outline-offset: var(--substrate-focus-offset, 2px);
 
             &:focus {
-                outline: 1px solid;
+                outline-color: var(--substrate-focus, currentcolor);
             }
         }
     }
