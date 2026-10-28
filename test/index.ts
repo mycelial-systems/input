@@ -1,9 +1,25 @@
 import { test } from '@substrate-system/tapzero'
 import { waitFor } from '@substrate-system/dom'
 import '../src/index.js'
+import type { SubstrateInput } from '../src/index.js'
 
 type SubstrateInputHost = HTMLElement & {
     value:string;
+}
+
+/**
+ * Build the markup an app would render inside the host itself.
+ */
+function appMarkup (inputId:string):HTMLDivElement {
+    const wrapper = document.createElement('div')
+    wrapper.className = 'substrate input'
+    const label = document.createElement('label')
+    label.className = 'label-content'
+    label.htmlFor = inputId
+    const input = document.createElement('input')
+    input.id = inputId
+    wrapper.append(label, input)
+    return wrapper
 }
 
 test('should find the element', async t => {
@@ -45,7 +61,7 @@ test('should delegate id to inner input', async t => {
         'host element should not retain the id attribute')
 })
 
-test('should delegate aria attributes to inner input', async t => {
+test('should move aria attributes to inner input', async t => {
     document.body.innerHTML += `
         <substrate-input
             name="aria-test"
@@ -59,6 +75,84 @@ test('should delegate aria attributes to inner input', async t => {
         'inner input should have aria-describedby')
     t.ok(!el!.hasAttribute('aria-describedby'),
         'host element should not retain aria attributes')
+})
+
+test('moves focus attributes off the host', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="focus-attrs" label="Focus" ' +
+        'aria-describedby="hint" tabindex="0" autofocus>' +
+        '</substrate-input>'
+
+    const el = await waitFor('substrate-input[name="focus-attrs"]')
+    const input = el!.querySelector('input')!
+
+    t.equal(input.getAttribute('aria-describedby'), 'hint',
+        'inner input should have aria-describedby')
+    t.equal(input.getAttribute('tabindex'), '0',
+        'inner input should have tabindex')
+    t.ok(input.hasAttribute('autofocus'),
+        'inner input should have autofocus')
+    for (const name of ['aria-describedby', 'tabindex', 'autofocus']) {
+        t.ok(!el!.hasAttribute(name), `host should not keep ${name}`)
+    }
+})
+
+test('a moved attribute set after render moves too', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="late-aria"></substrate-input>'
+
+    const el = await waitFor('substrate-input[name="late-aria"]')
+    const input = el!.querySelector('input')!
+
+    el!.setAttribute('aria-invalid', 'true')
+    t.equal(input.getAttribute('aria-invalid'), 'true',
+        'inner input should get aria-invalid')
+    t.ok(!el!.hasAttribute('aria-invalid'),
+        'host should not keep aria-invalid')
+
+    el!.setAttribute('tabindex', '-1')
+    t.equal(input.getAttribute('tabindex'), '-1',
+        'inner input should get tabindex')
+    t.ok(!el!.hasAttribute('tabindex'), 'host should not keep tabindex')
+})
+
+test('mirrors state attributes and keeps them on the host', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="mirrored" required></substrate-input>'
+
+    const el = await waitFor('substrate-input[name="mirrored"]')
+    const input = el!.querySelector('input')!
+
+    t.equal(el!.getAttribute('name'), 'mirrored', 'host keeps name')
+    t.ok(el!.hasAttribute('required'), 'host keeps required')
+    t.ok(input.required, 'inner input is required')
+
+    el!.setAttribute('disabled', '')
+    t.ok(input.disabled, 'inner input should be disabled')
+    t.ok(el!.hasAttribute('disabled'), 'host keeps disabled')
+
+    el!.removeAttribute('disabled')
+    t.ok(!input.disabled, 'inner input should no longer be disabled')
+
+    el!.removeAttribute('required')
+    t.ok(!input.required, 'inner input should no longer be required')
+})
+
+test('control property returns the inner input', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="control"></substrate-input>'
+
+    const host = await waitFor(
+        'substrate-input[name="control"]'
+    ) as SubstrateInput
+    const input = host.querySelector('input')!
+    t.equal(host.control, input, 'control should be the inner input')
+
+    // the way to change a moved attribute after connect
+    host.control!.setAttribute('aria-invalid', 'true')
+    host.control!.removeAttribute('aria-invalid')
+    t.ok(!input.hasAttribute('aria-invalid'),
+        'removal through control should stick')
 })
 
 test('aria attributes survive upgrade when after label', async t => {
@@ -271,6 +365,212 @@ test('render skips attribute names setAttribute rejects', async t => {
         'other attributes should still be forwarded')
     t.ok(!host!.hasAttribute('id'),
         'host id should still be delegated')
+})
+
+test('hydrates when the inner input is already there', async t => {
+    const host = document.createElement('substrate-input')
+    host.setAttribute('name', 'hydrate')
+    const markup = appMarkup('hydrate-input')
+    host.appendChild(markup)
+    const input = markup.querySelector('input')!
+
+    let inputEvents = 0
+    input.addEventListener('input', () => inputEvents++)
+
+    document.body.appendChild(host)
+
+    t.equal(host.querySelector('input'), input,
+        'should keep the same input node')
+    t.equal(host.firstElementChild, markup,
+        'should keep the same wrapper node')
+    t.equal(host.querySelectorAll('input').length, 1,
+        'should not add another input')
+
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    t.equal(inputEvents, 1,
+        'a listener attached before connecting should still fire')
+})
+
+test('hydrating fills in missing attributes only', async t => {
+    const host = document.createElement('substrate-input')
+    host.setAttribute('name', 'hydrate-mirror')
+    host.setAttribute('id', 'host-id')
+    host.setAttribute('aria-describedby', 'hint')
+    host.setAttribute('aria-label', 'From the host')
+    const markup = appMarkup('hydrate-mirror-input')
+    const input = markup.querySelector('input')!
+    input.setAttribute('aria-label', 'From the app')
+    host.appendChild(markup)
+    document.body.appendChild(host)
+
+    t.equal(input.getAttribute('aria-describedby'), 'hint',
+        'existing input should get a missing aria attribute')
+    t.equal(input.getAttribute('name'), 'hydrate-mirror',
+        'existing input should get a missing input attribute')
+    t.equal(input.getAttribute('aria-label'), 'From the app',
+        'should not replace an attribute the app set')
+    t.equal(input.id, 'hydrate-mirror-input',
+        'should not replace the id the app gave the input')
+    for (const name of ['id', 'aria-describedby', 'aria-label']) {
+        t.ok(!host.hasAttribute(name), `host should not keep ${name}`)
+    }
+    t.equal(host.getAttribute('name'), 'hydrate-mirror',
+        'host should keep mirrored attributes')
+})
+
+test('hydrated input keeps a removal the app made', async t => {
+    const host = document.createElement('substrate-input')
+    host.setAttribute('name', 'hydrate-removal')
+    host.setAttribute('label', 'Label')
+    const markup = appMarkup('hydrate-removal-input')
+    const input = markup.querySelector('input')!
+    input.setAttribute('aria-invalid', 'true')
+    host.appendChild(markup)
+    document.body.appendChild(host)
+
+    t.equal(input.getAttribute('aria-invalid'), 'true',
+        'should leave the existing aria-invalid alone')
+
+    // what Preact does when the prop goes away
+    input.removeAttribute('aria-invalid')
+
+    // things that could make the element re-apply attributes
+    host.setAttribute('label', 'Changed')
+    host.setAttribute('placeholder', 'something')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    container.appendChild(host)
+
+    t.ok(!input.hasAttribute('aria-invalid'),
+        'the element should not add aria-invalid back')
+    t.equal(host.querySelector('input'), input,
+        'should still have the app input')
+})
+
+test('does not render before it is connected', async t => {
+    // a framework sets attributes on a detached element, then appends
+    // its own children, then connects it
+    const host = document.createElement('substrate-input')
+    host.setAttribute('label', 'Early label')
+    host.setAttribute('name', 'detached')
+    t.equal(host.children.length, 0,
+        'should not render while detached')
+
+    const markup = appMarkup('detached-input')
+    host.appendChild(markup)
+    document.body.appendChild(host)
+
+    t.equal(host.querySelectorAll('input').length, 1,
+        'should have only the app input')
+    t.equal(host.firstElementChild, markup,
+        'should keep the app markup')
+})
+
+test('changing the label keeps the same input', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="relabel" label="Before"></substrate-input>'
+
+    const host = await waitFor(
+        'substrate-input[name="relabel"]'
+    ) as SubstrateInputHost
+    const input = host.querySelector('input')!
+    input.value = 'typed value'
+
+    host.setAttribute('label', 'After')
+    t.equal(host.querySelector('input'), input,
+        'should keep the same input node')
+    t.equal(input.value, 'typed value', 'should keep the live value')
+    t.equal(host.querySelector('label')?.textContent,
+        host.getAttribute('label'),
+        'label should match the new attribute')
+    t.equal(host.querySelector('label')?.htmlFor, input.id,
+        'label should still point at the input')
+
+    host.removeAttribute('label')
+    t.ok(!host.querySelector('label'), 'should remove the label')
+    t.equal(host.querySelector('input'), input,
+        'should still keep the same input node')
+
+    host.setAttribute('label', 'Again')
+    const label = host.querySelector('label')
+    t.equal(label?.htmlFor, input.id, 'should add a label for the input')
+    t.equal(label?.nextElementSibling, input,
+        'the label should come before the input')
+})
+
+test('reconnecting keeps the same input', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="reconnect" label="Move"></substrate-input>'
+
+    const host = await waitFor('substrate-input[name="reconnect"]')
+    const input = host!.querySelector('input')!
+    input.value = 'typed value'
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    container.appendChild(host!)
+
+    t.equal(host!.querySelector('input'), input,
+        'should keep the same input node')
+    t.equal(host!.querySelectorAll('label').length, 1,
+        'should not add another label')
+    t.equal(input.value, 'typed value', 'should keep the live value')
+})
+
+test('inputId property sets the inner input id', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="input-id" label="Id"></substrate-input>'
+
+    const host = await waitFor(
+        'substrate-input[name="input-id"]'
+    ) as SubstrateInput
+    const input = host.querySelector('input')!
+    const label = host.querySelector('label')!
+
+    host.inputId = 'from-property'
+    t.equal(input.id, 'from-property', 'input should get the id')
+    t.equal(label.htmlFor, 'from-property', 'label should follow the id')
+    t.equal(host.inputId, 'from-property', 'getter should return the id')
+    t.ok(!host.hasAttribute('id'), 'host should not get the id')
+
+    // frameworks clear a removed property with null or ''
+    host.inputId = ''
+    t.equal(host.inputId, null, 'clearing should reset the property')
+    t.ok(input.id, 'input should fall back to a generated id')
+    t.equal(label.htmlFor, input.id, 'label should follow the fallback')
+})
+
+test('setting the host id again updates the inner input', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="id-removal" label="Id" ' +
+        'id="id-removal"></substrate-input>'
+
+    const host = await waitFor('substrate-input[name="id-removal"]')
+    const input = host!.querySelector('input')!
+
+    host!.setAttribute('id', 'id-removal-2')
+    t.equal(input.id, 'id-removal-2', 'input should get the new id')
+    t.ok(!host!.hasAttribute('id'), 'host should not keep the id')
+})
+
+test('disabled property reflects to the inner input', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="disabled-prop"></substrate-input>'
+
+    const host = await waitFor(
+        'substrate-input[name="disabled-prop"]'
+    ) as SubstrateInput
+    const input = host.querySelector('input')!
+
+    host.disabled = true
+    t.ok(input.disabled, 'inner input should be disabled')
+    t.ok(host.disabled, 'getter should return true')
+    t.ok(host.classList.contains('disabled'), 'host gets the class')
+
+    host.disabled = false
+    t.ok(!input.disabled, 'inner input should be enabled')
+    t.ok(!host.disabled, 'getter should return false')
+    t.ok(!host.classList.contains('disabled'), 'host loses the class')
 })
 
 test('all done', () => {

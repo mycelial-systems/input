@@ -21,12 +21,15 @@ attributes to the inner `input` element, like an `id` or `name`, for example.
 - [Install](#install)
 - [CSS](#css)
   * [Import CSS](#import-css)
+  * [Theme](#theme)
 - [Use](#use)
   * [JS](#js)
   * [HTML](#html)
+  * [Render the markup yourself](#render-the-markup-yourself)
   * [pre-built](#pre-built)
 - [API](#api)
   * [Attributes](#attributes)
+  * [Properties](#properties)
   * [Events](#events)
 
 <!-- tocstop -->
@@ -52,6 +55,29 @@ Or minified:
 import '@substrate-system/input/min/css'
 ```
 
+### Theme
+
+Set these CSS variables to theme the input. Each one has a fallback, so
+the component works without any of them.
+
+| Variable | Used for | Default |
+|----------|----------|---------|
+| `--substrate-text` | Input text color | `FieldText` |
+| `--substrate-surface` | Input background | `Field` |
+| `--substrate-border` | Input border color | `currentcolor` |
+| `--substrate-radius` | Input border radius | `0` |
+| `--substrate-focus` | Focus ring color | `currentcolor` |
+| `--substrate-focus-width` | Focus ring width | `2px` |
+| `--substrate-focus-offset` | Focus ring offset | `2px` |
+
+```css
+:root {
+    --substrate-focus: var(--color-focus);
+    --substrate-focus-width: 0.1875rem;
+    --substrate-focus-offset: 0.125rem;
+}
+```
+
 ## Use
 
 This calls the global function `customElements.define`. Just import, then use
@@ -74,6 +100,35 @@ document.body.innerHTML += `
     <substrate-input></substrate-input>
 </div>
 ```
+
+### Render the markup yourself
+
+If the element already has an inner `<input>` when it connects, it
+keeps the existing markup instead of replacing it. Then a framework
+like Preact can render every node itself, and the element only adds
+behavior. It leaves the label alone, and every attribute the app already
+set on the input. Host attributes only fill in what the input is
+missing.
+
+Put `id`, `tabindex`, `autofocus`, and every `aria-*` straight on the
+inner input. Then the framework updates and removes them on a node it
+owns. Keep the value and state attributes (`name`, `value`, `disabled`,
+`required`, `form`) on the host.
+
+Use these classes so the CSS applies:
+
+```html
+<substrate-input name="email" required>
+    <div class="substrate input email">
+        <label class="label-content" for="email">Email</label>
+        <input id="email" type="email" aria-describedby="email-hint">
+    </div>
+</substrate-input>
+```
+
+The element does not render while it is detached from the document. A
+framework can set attributes and append children first, and the
+element renders, or adopts the markup, when it connects.
 
 ### pre-built
 This package exposes minified JS and CSS files too. Copy them to a location that is
@@ -108,11 +163,13 @@ These are handled by `substrate-input` directly.
 | Attribute | Description |
 |-----------|-------------|
 | `label` | Text content for the `<label>` element rendered above the input. When omitted, no label is rendered. |
-| `id` | Forwarded to the inner `<input>` element. Removed from the host element. When omitted, a random id is generated for the input. |
+| `id` | Moved to the inner `<input>` element (see [Moved attributes](#moved-attributes)). When omitted, a random id is generated for the input. Use the `inputId` property to change or clear it later. |
 
 #### `input` element attributes
 
-These are forwarded directly to the inner `<input>` element.
+These are copied to the inner `<input>` element and kept on the host.
+Removing one from the host removes it from the input too. The exceptions
+are `autofocus` and `tabindex`, which are moved instead.
 
 `accept`, `alt`, `autocomplete`, `autocapitalize`, `autocorrect`,
 `autofocus`, `capture`, `dirname`, `disabled`, `enterkeyhint`, `form`,
@@ -120,10 +177,34 @@ These are forwarded directly to the inner `<input>` element.
 `name`, `pattern`, `placeholder`, `readonly`, `required`, `size`,
 `spellcheck`, `step`, `tabindex`, `title`, `type`, `value`
 
+#### Moved attributes
+
+`id`, `tabindex`, `autofocus`, and every `aria-*` attribute describe
+the focusable control, so they are moved: copied to the inner `<input>`
+and removed from the host. Left on the host they would cause problems.
+An `aria-label` on an element with no role fails axe's
+`aria-prohibited-attr`, `aria-hidden` hides the whole control, and a
+`tabindex` adds a second tab stop.
+
+Because the host no longer has the attribute, removing it from the host
+later does nothing. So don't set these on the host from a framework.
+Either [render the inner input yourself](#render-the-markup-yourself)
+and put them there, or change them through the `control` property:
+
+```js
+const el = document.querySelector('substrate-input')
+el.control.setAttribute('aria-invalid', 'true')
+el.control.removeAttribute('aria-invalid')
+```
+
+Setting a moved attribute on the host again does work. It moves the new
+value to the input.
+
 #### ARIA attributes
 
-All ARIA attributes are forwarded to the inner `<input>` element and
-removed from the host element.
+These are observed, so setting one on the host after connect moves it
+to the inner input. Any other `aria-*` attribute on the host moves when
+the element renders.
 
 `aria-activedescendant`, `aria-atomic`, `aria-autocomplete`,
 `aria-braillelabel`, `aria-brailleroledescription`, `aria-busy`,
@@ -139,6 +220,16 @@ removed from the host element.
 `aria-rowindex`, `aria-rowindextext`, `aria-rowspan`, `aria-selected`,
 `aria-setsize`, `aria-sort`, `aria-valuemax`, `aria-valuemin`,
 `aria-valuenow`, `aria-valuetext`
+
+### Properties
+
+| Property | Description |
+|----------|-------------|
+| `control` | The inner `<input>` element, or `null` before render. Read only. |
+| `value` | Reads and writes the inner input's live value. |
+| `disabled` | Boolean. Sets or removes the `disabled` attribute. |
+| `inputId` | The inner input's id. Set it to `null` or `''` to clear it; the input then gets a generated id. |
+| `label` | Sets or removes the `label` attribute. |
 
 ### Events
 
