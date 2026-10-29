@@ -262,6 +262,8 @@ attribute and `false` removes it. Any other value becomes a string.
 Setting the property to `null` or `''` clears every attribute it set.
 
 Other names, including `id`, are ignored. Use `inputId` for the id.
+Names are lowercased, so `tabIndex` and `autoFocus` work too. If two
+keys lowercase to the same name, the later one wins.
 `controlAttributes` only removes attributes it set itself, so an
 attribute already on an input you
 [rendered yourself](#render-the-markup-yourself) stays.
