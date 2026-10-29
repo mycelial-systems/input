@@ -868,6 +868,40 @@ test('an inputId property wins over a Preact inputid attribute', async t => {
         'inputid is removed from the host')
 })
 
+test('an app-rendered input is adopted when the host upgrades', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-hydrate')
+    el.setAttribute('inputid', 'attr-hydrate-id')
+    el.controlAttributes = { 'aria-invalid': 'true' }
+    el.value = 'app-value'
+    el.disabled = true
+    // the app renders the inner markup before the element is defined
+    el.appendChild(appMarkup('app-hydrate-id'))
+    const input = el.querySelector('input')!
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-hydrate"]')
+    t.equal(el.control, input,
+        'the app input is adopted, not replaced')
+    t.equal(input.getAttribute('aria-invalid'), 'true',
+        'controlAttributes reaches the app input')
+    t.equal(input.value, 'app-value',
+        'value reaches the app input')
+    t.ok(input.disabled, 'disabled reaches the app input')
+    t.equal(input.id, 'attr-hydrate-id',
+        'the inputid attribute sets the app input id')
+    t.ok(!el.hasAttribute('controlattributes'),
+        'controlattributes is removed from the host')
+    t.ok(!el.hasAttribute('inputid'),
+        'inputid is removed from the host')
+
+    el.controlAttributes = {}
+    t.ok(!input.hasAttribute('aria-invalid'),
+        'a later controlAttributes call removes aria-invalid')
+})
+
 test('all done', () => {
     // @ts-expect-error tests
     window.testsFinished = true
