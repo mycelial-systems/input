@@ -237,10 +237,19 @@ the element renders.
 | `label` | Sets or removes the `label` attribute. |
 
 `value`, `disabled`, `inputId`, `controlAttributes`, and `label` can be
-set before the element is defined. They apply when it upgrades. A
-framework that renders before the definition loads, such as Preact, is
-handled too. That includes the `controlattributes` and `inputid`
-attributes Preact writes in that case.
+set before the element is defined. They apply when it upgrades.
+
+A framework that renders before the definition loads, such as Preact,
+writes an `inputid` attribute, and its value becomes the input id. It
+also writes a `controlattributes` attribute, but that value is
+`[object Object]`, so the `controlAttributes` value cannot be recovered.
+The element removes the attribute on upgrade, and the host ends with
+`controlAttributes` set to `{}`. Preact sets the property again after
+the definition loads only when the object changes identity. A memoized
+or module-level object is not set again, so it does not reach the input
+until it changes. An inline object applies from the next render that
+passes a new object. To avoid this, define the element before the first
+render, or pass an inline object.
 
 #### `controlAttributes`
 
@@ -276,14 +285,15 @@ keys lowercase to the same name, the later one wins.
 attribute already on an input you
 [rendered yourself](#render-the-markup-yourself) stays.
 
-A host `aria-*` attribute and `controlAttributes` write to the same
-attribute on the input. A host attribute set after the element has
-rendered takes the name over, and after that `controlAttributes` stops
-removing it. Listing the name in `controlAttributes` again takes it
-back. A host attribute set before the element renders is forwarded
-first, and then `controlAttributes` is applied, so `controlAttributes`
-wins for a name it lists. Setting `autofocus` after the element has
-rendered does not move focus.
+A host `aria-*`, `tabindex`, or `autofocus` attribute and
+`controlAttributes` write to the same attribute on the input. A host
+attribute set after the element has rendered takes the name over, and
+after that `controlAttributes` stops removing it. Listing the name again
+with a value takes it back. A `null`, `undefined`, or `false` value does
+not remove a host-owned attribute. A host attribute set before the
+element renders is forwarded first, and then `controlAttributes` is
+applied, so `controlAttributes` wins for a name it lists. Setting
+`autofocus` after the element has rendered does not move focus.
 
 Preact sets an inline object prop on every render. If `controlAttributes`
 still lists the name, the next render overwrites the host value, so stop
