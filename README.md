@@ -189,7 +189,9 @@ An `aria-label` on an element with no role fails axe's
 Because the host no longer has the attribute, removing it from the host
 later does nothing. So don't set these on the host from a framework.
 Either [render the inner input yourself](#render-the-markup-yourself)
-and put them there, or change them through the `control` property:
+and put them there, pass them in the
+[`controlAttributes`](#controlattributes) property, or change them
+through the `control` property:
 
 ```js
 const el = document.querySelector('substrate-input')
@@ -229,7 +231,44 @@ the element renders.
 | `value` | Reads and writes the inner input's live value. |
 | `disabled` | Boolean. Sets or removes the `disabled` attribute. |
 | `inputId` | The inner input's id. Set it to `null` or `''` to clear it; the input then gets a generated id. |
+| `controlAttributes` | The inner input's `aria-*`, `tabindex`, and `autofocus` attributes, as an object. See [below](#controlattributes). |
 | `label` | Sets or removes the `label` attribute. |
+
+#### `controlAttributes`
+
+Use this property to set and clear the inner input's `aria-*`,
+`tabindex`, and `autofocus` from a framework. Pass every one the input
+should have, on every render. A name you passed before and leave out
+now is removed from the input, so clearing an error clears its
+`aria-invalid` and `aria-describedby` too.
+
+```js
+import { html } from 'htm/preact'
+
+html`<substrate-input
+    name="email"
+    label="Email"
+    controlAttributes=${{
+        'aria-invalid': bad,
+        'aria-describedby': bad ? 'email-error' : undefined
+    }}
+></substrate-input>`
+```
+
+Values follow Preact's rules for attributes. `null` and `undefined`
+remove the attribute. For `aria-*`, `true` and `false` become `"true"`
+and `"false"`. For `tabindex` and `autofocus`, `true` is an empty
+attribute and `false` removes it. Any other value becomes a string.
+Setting the property to `null` or `''` clears every attribute it set.
+
+Other names, including `id`, are ignored. Use `inputId` for the id.
+`controlAttributes` only removes attributes it set itself, so an
+attribute already on an input you
+[rendered yourself](#render-the-markup-yourself) stays.
+
+A host `aria-*` attribute and `controlAttributes` write to the same
+attribute on the input, so whichever is set last wins. Setting
+`autofocus` after the element has rendered does not move focus.
 
 ### Events
 

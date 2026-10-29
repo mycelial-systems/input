@@ -573,6 +573,96 @@ test('disabled property reflects to the inner input', async t => {
     t.ok(!host.classList.contains('disabled'), 'host loses the class')
 })
 
+test('controlAttributes puts attributes on the input only', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-set"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-set"]'
+    ) as SubstrateInput
+    el.controlAttributes = { 'aria-describedby': 'hint', tabindex: 0 }
+    t.equal(el.control!.getAttribute('aria-describedby'), 'hint',
+        'input gets aria-describedby')
+    t.equal(el.control!.getAttribute('tabindex'), '0', 'input gets tabindex')
+    t.ok(!el.hasAttribute('aria-describedby'), 'host does not')
+})
+
+test('controlAttributes removes a name it no longer lists', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-drop"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-drop"]'
+    ) as SubstrateInput
+    el.controlAttributes = {
+        'aria-invalid': 'true',
+        'aria-describedby': 'err'
+    }
+    el.controlAttributes = { 'aria-describedby': undefined }
+    t.ok(!el.control!.hasAttribute('aria-invalid'), 'aria-invalid is gone')
+    t.ok(!el.control!.hasAttribute('aria-describedby'),
+        'an undefined value removes it')
+    el.controlAttributes = { 'aria-label': 'x' }
+    el.controlAttributes = null
+    t.ok(!el.control!.hasAttribute('aria-label'), 'null clears all')
+    el.controlAttributes = { 'aria-label': 'x' }
+    Reflect.set(el, 'controlAttributes', '')
+    t.ok(!el.control!.hasAttribute('aria-label'), 'empty string clears all')
+})
+
+test('controlAttributes set before render reaches the input', async t => {
+    const el = document.createElement('substrate-input') as SubstrateInput
+    el.setAttribute('name', 'ca-early')
+    el.controlAttributes = { 'aria-required': true }
+    el.setAttribute('label', 'Early')
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="ca-early"]')
+    t.equal(el.control!.getAttribute('aria-required'), 'true',
+        'input has aria-required')
+})
+
+test('controlAttributes ignores names it does not move', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-ignore"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-ignore"]'
+    ) as SubstrateInput
+    el.controlAttributes = { name: 'x', id: 'y' }
+    t.equal(el.control!.getAttribute('name'), 'ca-ignore',
+        'name is unchanged')
+    t.notEqual(el.control!.id, 'y', 'id is ignored')
+})
+
+test('controlAttributes writes booleans as Preact does', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-bools"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-bools"]'
+    ) as SubstrateInput
+    el.controlAttributes = { 'aria-invalid': false, autofocus: true }
+    t.equal(el.control!.getAttribute('aria-invalid'), 'false',
+        'aria false is the string "false"')
+    t.equal(el.control!.getAttribute('autofocus'), '', 'true is present')
+    el.controlAttributes = { autofocus: false }
+    t.ok(!el.control!.hasAttribute('autofocus'), 'false removes it')
+})
+
+test('controlAttributes leaves a hydrated input\'s own attributes',
+    async t => {
+        const el = document.createElement('substrate-input') as
+            SubstrateInput
+        el.setAttribute('name', 'ca-hydrate')
+        const markup = appMarkup('ca-hydrate-id')
+        markup.querySelector('input')!.setAttribute('aria-label', 'app')
+        el.appendChild(markup)
+        el.controlAttributes = { 'aria-invalid': 'true' }
+        document.body.appendChild(el)
+        await waitFor('substrate-input[name="ca-hydrate"]')
+        el.controlAttributes = {}
+        t.ok(!el.control!.hasAttribute('aria-invalid'),
+            'its own attribute is removed')
+        t.equal(el.control!.getAttribute('aria-label'), 'app',
+            'the app attribute stays')
+    })
+
 test('all done', () => {
     // @ts-expect-error tests
     window.testsFinished = true

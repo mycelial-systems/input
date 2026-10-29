@@ -6,6 +6,14 @@ import {
     MOVED_ATTRIBUTES
 } from './util.js'
 
+/**
+ * Attributes for the inner input, set through `controlAttributes`.
+ */
+export type ControlAttributes = Record<
+    string,
+    string|number|boolean|null|undefined
+>
+
 // for document.querySelector
 declare global {
     interface HTMLElementTagNameMap {
@@ -32,6 +40,10 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
     inputEl:HTMLInputElement|null = null
     // false when the app rendered the inner markup itself
     ownsMarkup = false
+
+    _controlAttributes:ControlAttributes = {}
+    // names applyControlAttributes wrote to the current inner input
+    appliedControlAttributes:string[] = []
 
     handleChange_label (_oldValue:string|null, newValue:string|null) {
         if (this.ownsMarkup) {
@@ -140,6 +152,51 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         return this._inputId
     }
 
+    /**
+     * Every `aria-*`, `tabindex`, and `autofocus` attribute the inner
+     * input should have. A name left out of a later value is removed, so
+     * a framework can clear one on any render.
+     */
+    set controlAttributes (value:ControlAttributes|null) {
+        // frameworks clear a removed property with `null` or ''
+        this._controlAttributes = (value && typeof value === 'object') ?
+            { ...value } :
+            {}
+        this.applyControlAttributes()
+    }
+
+    get controlAttributes ():ControlAttributes {
+        return { ...this._controlAttributes }
+    }
+
+    /**
+     * Write `controlAttributes` to the inner input, and remove the names
+     * it wrote last time but no longer lists.
+     */
+    applyControlAttributes () {
+        const input = this.querySelector('input')
+        if (!input) return
+
+        const applied:string[] = []
+        for (const [name, value] of Object.entries(this._controlAttributes)) {
+            // `id` goes through `inputId`
+            if (name === 'id' || !isMoved(name)) continue
+            const attrValue = toAttributeValue(name, value)
+            if (attrValue === null) continue
+            try {
+                input.setAttribute(name, attrValue)
+                applied.push(name)
+            } catch (_err) {
+                // skip names setAttribute rejects
+            }
+        }
+
+        for (const name of this.appliedControlAttributes) {
+            if (!applied.includes(name)) input.removeAttribute(name)
+        }
+        this.appliedControlAttributes = applied
+    }
+
     set label (value:string|null) {
         if (value === null) {
             this.removeAttribute('label')
@@ -215,6 +272,7 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
     hydrate (input:HTMLInputElement) {
         this.inputEl = input
         this.ownsMarkup = false
+        this.appliedControlAttributes = []
 
         const hostId = this.getAttribute('id')
         if (hostId !== null && !input.id) {
@@ -229,6 +287,7 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         }
 
         this.removeMovedAttributes()
+        this.applyControlAttributes()
     }
 
     build () {
@@ -268,8 +327,10 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
 
         this.inputEl = input
         this.ownsMarkup = true
+        this.appliedControlAttributes = []
         this.updateLabel(input, label)
         this.removeMovedAttributes()
+        this.applyControlAttributes()
     }
 
     removeMovedAttributes () {
@@ -312,6 +373,22 @@ function forwardAttribute (
     }
 
     input.setAttribute(name, value)
+}
+
+/**
+ * Turn a `controlAttributes` value into an attribute value the way
+ * Preact does. `null` means the attribute should be absent.
+ */
+function toAttributeValue (
+    name:string,
+    value:ControlAttributes[string]
+):string|null {
+    if (value === null || value === undefined) return null
+    if (typeof value === 'boolean') {
+        if (name.startsWith('aria-')) return String(value)
+        return value ? '' : null
+    }
+    return String(value)
 }
 
 define(SubstrateInput.TAG, SubstrateInput)
