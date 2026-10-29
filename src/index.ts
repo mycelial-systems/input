@@ -177,6 +177,13 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         const input = this.querySelector('input')
         if (!input) return
 
+        // An input this element has not adopted yet, because it is not
+        // connected or the app swapped it. Adopting it applies these.
+        if (input !== this.inputEl) {
+            if (this.isConnected) this.render()
+            return
+        }
+
         const applied:string[] = []
         for (const [name, value] of Object.entries(this._controlAttributes)) {
             // `id` goes through `inputId`

@@ -249,7 +249,7 @@ html`<substrate-input
     name="email"
     label="Email"
     controlAttributes=${{
-        'aria-invalid': bad,
+        'aria-invalid': bad ? 'true' : undefined,
         'aria-describedby': bad ? 'email-error' : undefined
     }}
 ></substrate-input>`

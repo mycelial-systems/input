@@ -656,12 +656,32 @@ test('controlAttributes leaves a hydrated input\'s own attributes',
         el.controlAttributes = { 'aria-invalid': 'true' }
         document.body.appendChild(el)
         await waitFor('substrate-input[name="ca-hydrate"]')
+        t.equal(el.control!.getAttribute('aria-invalid'), 'true',
+            'hydrate applies it')
         el.controlAttributes = {}
         t.ok(!el.control!.hasAttribute('aria-invalid'),
             'its own attribute is removed')
         t.equal(el.control!.getAttribute('aria-label'), 'app',
             'the app attribute stays')
     })
+
+test('controlAttributes follows a swapped inner input', async t => {
+    const el = document.createElement('substrate-input') as SubstrateInput
+    el.setAttribute('name', 'ca-swap')
+    el.appendChild(appMarkup('ca-swap-id'))
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="ca-swap"]')
+    el.controlAttributes = { 'aria-describedby': 'a' }
+
+    const next = document.createElement('input')
+    next.setAttribute('aria-describedby', 'app')
+    el.control!.replaceWith(next)
+    el.controlAttributes = { 'aria-invalid': 'true' }
+    t.equal(next.getAttribute('aria-invalid'), 'true',
+        'the new input gets it')
+    t.equal(next.getAttribute('aria-describedby'), 'app',
+        'the app attribute on the new input stays')
+})
 
 test('all done', () => {
     // @ts-expect-error tests
