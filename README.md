@@ -201,7 +201,8 @@ el.control.removeAttribute('aria-invalid')
 
 Setting a moved attribute on the host again does work. It moves the new
 value to the input. If [`controlAttributes`](#controlattributes) had set
-that name, the host value takes it over.
+that name, the host value takes it over once the element has rendered.
+Before render, `controlAttributes` is applied last and still wins.
 
 #### ARIA attributes
 
@@ -270,14 +271,17 @@ attribute already on an input you
 [rendered yourself](#render-the-markup-yourself) stays.
 
 A host `aria-*` attribute and `controlAttributes` write to the same
-attribute on the input. A host attribute set later takes the name over,
-and after that `controlAttributes` stops removing it. Listing the name in
-`controlAttributes` again takes it back.
+attribute on the input. A host attribute set after the element has
+rendered takes the name over, and after that `controlAttributes` stops
+removing it. Listing the name in `controlAttributes` again takes it
+back. A host attribute set before the element renders is forwarded
+first, and then `controlAttributes` is applied, so `controlAttributes`
+wins for a name it lists. Setting `autofocus` after the element has
+rendered does not move focus.
 
 Preact sets an inline object prop on every render. If `controlAttributes`
 still lists the name, the next render overwrites the host value, so stop
-listing a name once the host owns it. Setting `autofocus` after the
-element has rendered does not move focus.
+listing a name once the host owns it.
 
 ### Events
 
