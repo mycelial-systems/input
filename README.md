@@ -189,7 +189,9 @@ An `aria-label` on an element with no role fails axe's
 Because the host no longer has the attribute, removing it from the host
 later does nothing. So don't set these on the host from a framework.
 Either [render the inner input yourself](#render-the-markup-yourself)
-and put them there, or change them through the `control` property:
+and put them there, pass them in the
+[`controlAttributes`](#controlattributes) property, or change them
+through the `control` property:
 
 ```js
 const el = document.querySelector('substrate-input')
@@ -198,7 +200,9 @@ el.control.removeAttribute('aria-invalid')
 ```
 
 Setting a moved attribute on the host again does work. It moves the new
-value to the input.
+value to the input. If [`controlAttributes`](#controlattributes) had set
+that name, the host value takes it over once the element has rendered.
+Before render, `controlAttributes` is applied last and still wins.
 
 #### ARIA attributes
 
@@ -229,7 +233,72 @@ the element renders.
 | `value` | Reads and writes the inner input's live value. |
 | `disabled` | Boolean. Sets or removes the `disabled` attribute. |
 | `inputId` | The inner input's id. Set it to `null` or `''` to clear it; the input then gets a generated id. |
+| `controlAttributes` | The inner input's `aria-*`, `tabindex`, and `autofocus` attributes, as an object. See [below](#controlattributes). |
 | `label` | Sets or removes the `label` attribute. |
+
+`value`, `disabled`, `inputId`, `controlAttributes`, and `label` can be
+set before the element is defined. They apply when it upgrades.
+
+A framework that renders before the definition loads, such as Preact,
+writes an `inputid` attribute instead. Its value becomes the input id,
+unless the host also has an `id` or `inputId` was set as a property. It
+also writes a `controlattributes` attribute, but that value is
+`[object Object]`, so the `controlAttributes` value cannot be recovered.
+The element removes the attribute on upgrade, and the host ends with
+`controlAttributes` set to `{}`. Preact sets the property again only
+when the object changes identity. An inline object is missing until the
+next render. A memoized or module-level object is missing until it
+changes. To avoid this, define the element before the first render.
+
+#### `controlAttributes`
+
+Use this property to set and clear the inner input's `aria-*`,
+`tabindex`, and `autofocus` from a framework. Pass every one the input
+should have, on every render. A name you passed before and leave out
+now is removed from the input, so clearing an error clears its
+`aria-invalid` and `aria-describedby` too.
+
+```js
+import { html } from 'htm/preact'
+
+html`<substrate-input
+    name="email"
+    label="Email"
+    controlAttributes=${{
+        'aria-invalid': bad ? 'true' : undefined,
+        'aria-describedby': bad ? 'email-error' : undefined
+    }}
+></substrate-input>`
+```
+
+Values follow Preact's rules for attributes. `null` and `undefined`
+remove the attribute. For `aria-*`, `true` and `false` become `"true"`
+and `"false"`. For `tabindex` and `autofocus`, `true` is an empty
+attribute and `false` removes it. Any other value becomes a string.
+Setting the property to `null` or `''` clears every attribute it set.
+
+Other names, including `id`, are ignored. Use `inputId` for the id.
+Names are lowercased, so `tabIndex` and `autoFocus` work too. If two
+keys lowercase to the same name, the later one wins.
+`controlAttributes` only removes attributes it set itself, so an
+attribute already on an input you
+[rendered yourself](#render-the-markup-yourself) stays.
+
+A host `aria-*`, `tabindex`, or `autofocus` attribute and
+`controlAttributes` write to the same attribute on the input. A host
+attribute set after the element has rendered takes the name over, and
+after that `controlAttributes` stops removing it. Listing the name again
+with a value takes it back. A `null` or `undefined` value, or `false`
+for `tabindex` or `autofocus`, does not remove a host-owned attribute.
+For `aria-*`, `false` is the value `"false"`, so it takes the name
+back. A host attribute set before the
+element renders is forwarded first, and then `controlAttributes` is
+applied, so `controlAttributes` wins for a name it lists. Setting
+`autofocus` after the element has rendered does not move focus.
+
+Preact sets an inline object prop on every render. If `controlAttributes`
+still lists the name, the next render overwrites the host value, so stop
+listing a name once the host owns it.
 
 ### Events
 

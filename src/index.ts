@@ -6,12 +6,38 @@ import {
     MOVED_ATTRIBUTES
 } from './util.js'
 
+/**
+ * Attributes for the inner input, set through `controlAttributes`.
+ */
+export type ControlAttributes = Record<
+    string,
+    string|number|boolean|null|undefined
+>
+
 // for document.querySelector
 declare global {
     interface HTMLElementTagNameMap {
         'substrate-input': SubstrateInput
     }
 }
+
+/**
+ * Properties a page or framework can set before this element is
+ * defined. `upgradeProperties` runs them through their setters.
+ */
+const UPGRADED_PROPERTIES = [
+    'controlAttributes',
+    'inputId',
+    'value',
+    'label',
+    'disabled'
+]
+
+/**
+ * What Preact writes for the two properties that have no attribute of
+ * their own, when it renders before this element is defined.
+ */
+const PROPERTY_ATTRIBUTES = ['controlattributes', 'inputid']
 
 export class SubstrateInput extends WebComponent.create('substrate-input') {
     static TAG = 'substrate-input'
@@ -32,6 +58,10 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
     inputEl:HTMLInputElement|null = null
     // false when the app rendered the inner markup itself
     ownsMarkup = false
+
+    _controlAttributes:ControlAttributes = {}
+    // names applyControlAttributes wrote to the current inner input
+    appliedControlAttributes:string[] = []
 
     handleChange_label (_oldValue:string|null, newValue:string|null) {
         if (this.ownsMarkup) {
@@ -62,6 +92,9 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
             this.inputId = newValue
         } else {
             forwardAttribute(input, name, newValue)
+            // the host write now owns the name
+            this.appliedControlAttributes = this.appliedControlAttributes
+                .filter(applied => applied !== name)
         }
         this.removeAttribute(name)
     }
@@ -97,7 +130,33 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         }
     }
 
+    /**
+     * Re-set properties that were set before this element was
+     * defined, so they go through the setters, and take over the
+     * attributes Preact writes for them.
+     */
+    upgradeProperties ():void {
+        for (const name of UPGRADED_PROPERTIES) {
+            if (!Object.hasOwn(this, name)) continue
+            const value = Reflect.get(this, name)
+            Reflect.deleteProperty(this, name)
+            Reflect.set(this, name, value)
+        }
+
+        const inputId = this.getAttribute('inputid')
+        for (const name of PROPERTY_ATTRIBUTES) this.removeAttribute(name)
+        // an id given another way wins
+        if (
+            inputId !== null &&
+            this._inputId === null &&
+            !this.hasAttribute('id')
+        ) {
+            this.inputId = inputId
+        }
+    }
+
     connectedCallback () {
+        this.upgradeProperties()
         this.render()
     }
 
@@ -138,6 +197,65 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
 
     get inputId ():string|null {
         return this._inputId
+    }
+
+    /**
+     * Every `aria-*`, `tabindex`, and `autofocus` attribute the inner
+     * input should have. A name left out of a later value is removed, so
+     * a framework can clear one on any render.
+     */
+    set controlAttributes (value:ControlAttributes|null) {
+        // frameworks clear a removed property with `null` or ''
+        this._controlAttributes = (value && typeof value === 'object') ?
+            { ...value } :
+            {}
+        this.applyControlAttributes()
+    }
+
+    get controlAttributes ():ControlAttributes {
+        return { ...this._controlAttributes }
+    }
+
+    /**
+     * Write `controlAttributes` to the inner input, and remove the names
+     * it wrote last time but no longer lists.
+     */
+    applyControlAttributes () {
+        const input = this.querySelector('input')
+        if (!input) return
+
+        // An input this element has not adopted yet, because it is not
+        // connected or the app swapped it. Adopting it applies these.
+        if (input !== this.inputEl) {
+            if (this.isConnected) this.render()
+            return
+        }
+
+        // Names are lowercased. A later key replaces an earlier one
+        // with the same lowercased name.
+        const values = new Map<string, string|null>()
+        for (const [key, value] of Object.entries(this._controlAttributes)) {
+            const name = key.toLowerCase()
+            // `id` goes through `inputId`
+            if (name === 'id' || !isMoved(name)) continue
+            values.set(name, toAttributeValue(name, value))
+        }
+
+        for (const name of this.appliedControlAttributes) {
+            if (values.get(name) == null) input.removeAttribute(name)
+        }
+
+        const applied:string[] = []
+        for (const [name, attrValue] of values) {
+            if (attrValue === null) continue
+            try {
+                input.setAttribute(name, attrValue)
+                applied.push(name)
+            } catch (_err) {
+                // skip names setAttribute rejects
+            }
+        }
+        this.appliedControlAttributes = applied
     }
 
     set label (value:string|null) {
@@ -215,6 +333,7 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
     hydrate (input:HTMLInputElement) {
         this.inputEl = input
         this.ownsMarkup = false
+        this.appliedControlAttributes = []
 
         const hostId = this.getAttribute('id')
         if (hostId !== null && !input.id) {
@@ -229,6 +348,7 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         }
 
         this.removeMovedAttributes()
+        this.applyControlAttributes()
     }
 
     build () {
@@ -240,7 +360,11 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         const label = this.getAttribute('label')
         const name = this.getAttribute('name')
         const forwardedAttributes = Array.from(this.attributes)
-            .filter(attr => attr.name !== 'label' && attr.name !== 'id')
+            .filter(attr => (
+                attr.name !== 'label' &&
+                attr.name !== 'id' &&
+                !PROPERTY_ATTRIBUTES.includes(attr.name)
+            ))
 
         const classes = (this.getAttribute('class') ?? '').split(' ')
             .concat(['substrate', 'input', name || ''])
@@ -268,8 +392,10 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
 
         this.inputEl = input
         this.ownsMarkup = true
+        this.appliedControlAttributes = []
         this.updateLabel(input, label)
         this.removeMovedAttributes()
+        this.applyControlAttributes()
     }
 
     removeMovedAttributes () {
@@ -312,6 +438,22 @@ function forwardAttribute (
     }
 
     input.setAttribute(name, value)
+}
+
+/**
+ * Turn a `controlAttributes` value into an attribute value the way
+ * Preact does. `null` means the attribute should be absent.
+ */
+function toAttributeValue (
+    name:string,
+    value:ControlAttributes[string]
+):string|null {
+    if (value === null || value === undefined) return null
+    if (typeof value === 'boolean') {
+        if (name.startsWith('aria-')) return String(value)
+        return value ? '' : null
+    }
+    return String(value)
 }
 
 define(SubstrateInput.TAG, SubstrateInput)

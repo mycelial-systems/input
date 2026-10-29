@@ -22,6 +22,16 @@ function appMarkup (inputId:string):HTMLDivElement {
     return wrapper
 }
 
+/**
+ * A host that is not upgraded yet, like one a framework rendered before
+ * the element was defined. Appending it to the page adopts and
+ * upgrades it.
+ */
+function notUpgraded ():SubstrateInput {
+    const doc = document.implementation.createHTMLDocument('')
+    return doc.createElement('substrate-input') as SubstrateInput
+}
+
 test('should find the element', async t => {
     document.body.innerHTML += `
         <substrate-input
@@ -571,6 +581,330 @@ test('disabled property reflects to the inner input', async t => {
     t.ok(!input.disabled, 'inner input should be enabled')
     t.ok(!host.disabled, 'getter should return false')
     t.ok(!host.classList.contains('disabled'), 'host loses the class')
+})
+
+test('controlAttributes puts attributes on the input only', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-set"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-set"]'
+    ) as SubstrateInput
+    el.controlAttributes = { 'aria-describedby': 'hint', tabindex: 0 }
+    t.equal(el.control!.getAttribute('aria-describedby'), 'hint',
+        'input gets aria-describedby')
+    t.equal(el.control!.getAttribute('tabindex'), '0', 'input gets tabindex')
+    t.ok(!el.hasAttribute('aria-describedby'), 'host does not')
+})
+
+test('controlAttributes removes a name it no longer lists', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-drop"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-drop"]'
+    ) as SubstrateInput
+    el.controlAttributes = {
+        'aria-invalid': 'true',
+        'aria-describedby': 'err'
+    }
+    el.controlAttributes = { 'aria-describedby': undefined }
+    t.ok(!el.control!.hasAttribute('aria-invalid'), 'aria-invalid is gone')
+    t.ok(!el.control!.hasAttribute('aria-describedby'),
+        'an undefined value removes it')
+    el.controlAttributes = { 'aria-label': 'x' }
+    el.controlAttributes = null
+    t.ok(!el.control!.hasAttribute('aria-label'), 'null clears all')
+    el.controlAttributes = { 'aria-label': 'x' }
+    Reflect.set(el, 'controlAttributes', '')
+    t.ok(!el.control!.hasAttribute('aria-label'), 'empty string clears all')
+})
+
+test('controlAttributes set before render reaches the input', async t => {
+    const el = document.createElement('substrate-input') as SubstrateInput
+    el.setAttribute('name', 'ca-early')
+    el.controlAttributes = { 'aria-required': true }
+    el.setAttribute('label', 'Early')
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="ca-early"]')
+    t.equal(el.control!.getAttribute('aria-required'), 'true',
+        'input has aria-required')
+})
+
+test('controlAttributes ignores names it does not move', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-ignore"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-ignore"]'
+    ) as SubstrateInput
+    el.controlAttributes = { name: 'x', id: 'y' }
+    t.equal(el.control!.getAttribute('name'), 'ca-ignore',
+        'name is unchanged')
+    t.notEqual(el.control!.id, 'y', 'id is ignored')
+})
+
+test('controlAttributes writes booleans as Preact does', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-bools"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-bools"]'
+    ) as SubstrateInput
+    el.controlAttributes = { 'aria-invalid': false, autofocus: true }
+    t.equal(el.control!.getAttribute('aria-invalid'), 'false',
+        'aria false is the string "false"')
+    t.equal(el.control!.getAttribute('autofocus'), '', 'true is present')
+    el.controlAttributes = { autofocus: false }
+    t.ok(!el.control!.hasAttribute('autofocus'), 'false removes it')
+})
+
+test('controlAttributes leaves a hydrated input\'s own attributes',
+    async t => {
+        const el = document.createElement('substrate-input') as
+            SubstrateInput
+        el.setAttribute('name', 'ca-hydrate')
+        const markup = appMarkup('ca-hydrate-id')
+        markup.querySelector('input')!.setAttribute('aria-label', 'app')
+        el.appendChild(markup)
+        el.controlAttributes = { 'aria-invalid': 'true' }
+        document.body.appendChild(el)
+        await waitFor('substrate-input[name="ca-hydrate"]')
+        t.equal(el.control!.getAttribute('aria-invalid'), 'true',
+            'hydrate applies it')
+        el.controlAttributes = {}
+        t.ok(!el.control!.hasAttribute('aria-invalid'),
+            'its own attribute is removed')
+        t.equal(el.control!.getAttribute('aria-label'), 'app',
+            'the app attribute stays')
+    })
+
+test('controlAttributes follows a swapped inner input', async t => {
+    const el = document.createElement('substrate-input') as SubstrateInput
+    el.setAttribute('name', 'ca-swap')
+    el.appendChild(appMarkup('ca-swap-id'))
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="ca-swap"]')
+    el.controlAttributes = { 'aria-describedby': 'a' }
+
+    const next = document.createElement('input')
+    next.setAttribute('aria-describedby', 'app')
+    el.control!.replaceWith(next)
+    el.controlAttributes = { 'aria-invalid': 'true' }
+    t.equal(next.getAttribute('aria-invalid'), 'true',
+        'the new input gets it')
+    t.equal(next.getAttribute('aria-describedby'), 'app',
+        'the app attribute on the new input stays')
+})
+
+test('controlAttributes lowercases names', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-case"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-case"]'
+    ) as SubstrateInput
+
+    el.controlAttributes = { tabIndex: -1, autoFocus: true }
+    t.equal(el.control!.getAttribute('tabindex'), '-1',
+        'tabIndex lands as tabindex')
+    t.equal(el.control!.getAttribute('autofocus'), '',
+        'autoFocus lands as autofocus')
+
+    const id = el.control!.id
+    el.controlAttributes = { ID: 'nope' }
+    t.equal(el.control!.id, id, 'ID is still ignored')
+
+    el.controlAttributes = { 'aria-label': 'a' }
+    el.controlAttributes = { 'aria-Label': 'b' }
+    t.equal(el.control!.getAttribute('aria-label'), 'b',
+        'a case change keeps the attribute, with the new value')
+
+    el.controlAttributes = { 'aria-label': 'a', 'aria-Label': 'b' }
+    t.equal(el.control!.getAttribute('aria-label'), 'b',
+        'when two keys lowercase the same, the later key wins')
+
+    el.controlAttributes = {}
+    t.ok(!el.control!.hasAttribute('aria-label'),
+        'an empty set removes aria-label')
+})
+
+test('a host aria-* takes the name from controlAttributes', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-host"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-host"]'
+    ) as SubstrateInput
+
+    el.controlAttributes = { 'aria-label': 'prop' }
+    el.setAttribute('aria-label', 'host')
+    t.equal(el.control!.getAttribute('aria-label'), 'host',
+        'the host value moves to the input')
+
+    el.controlAttributes = {}
+    t.equal(el.control!.getAttribute('aria-label'), 'host',
+        'a later list without the name keeps the host value')
+
+    el.controlAttributes = { 'aria-label': 'prop' }
+    t.equal(el.control!.getAttribute('aria-label'), 'prop',
+        'listing the name again takes it back')
+})
+
+test('properties set before upgrade reach the input', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-upgrade')
+    el.controlAttributes = { 'aria-invalid': 'true' }
+    el.inputId = 'pre-upgrade-id'
+    el.value = 'early'
+    el.label = 'Early'
+    el.disabled = true
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-upgrade"]')
+    const input = el.control!
+    t.equal(input.getAttribute('aria-invalid'), 'true',
+        'AC3.1 controlAttributes reaches the input')
+    t.equal(input.id, 'pre-upgrade-id', 'AC3.2 inputId reaches the input')
+    t.equal(input.value, 'early', 'AC3.3 value reaches the input')
+    t.equal(el.querySelector('label')?.htmlFor, 'pre-upgrade-id',
+        'AC3.4 the label points at the input')
+    t.ok(input.disabled, 'AC3.5 disabled reaches the input')
+
+    el.controlAttributes = {}
+    t.ok(!input.hasAttribute('aria-invalid'),
+        'AC3.6 a setter call after upgrade removes aria-invalid')
+
+    el.remove()
+    document.body.appendChild(el)
+    t.equal(el.control, input, 'reconnect keeps the same input')
+    t.equal(el.control!.id, 'pre-upgrade-id',
+        'reconnect keeps the input id')
+})
+
+test('Preact attributes set before upgrade are not forwarded', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-preact')
+    el.setAttribute('controlattributes', '[object Object]')
+    el.setAttribute('inputid', 'pre-preact-id')
+    // a label makes the element render during upgrade, before
+    // connectedCallback
+    el.setAttribute('label', 'Preact')
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-preact"]')
+    const input = el.control!
+    t.ok(!input.hasAttribute('controlattributes'),
+        'AC4.1 controlattributes is not on the input')
+    t.ok(!el.hasAttribute('controlattributes'),
+        'AC4.1 controlattributes is removed from the host')
+    t.ok(!input.hasAttribute('inputid'),
+        'AC4.2 inputid is not on the input')
+    t.ok(!el.hasAttribute('inputid'),
+        'AC4.2 inputid is removed from the host')
+    t.equal(input.id, 'pre-preact-id',
+        'AC4.2 the inputid value becomes the input id')
+    t.equal(el.querySelector('label')?.htmlFor, 'pre-preact-id',
+        'AC4.2 the label follows the input id')
+})
+
+test('a host id wins over a Preact inputid', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-id')
+    el.setAttribute('id', 'pre-id-host')
+    el.setAttribute('inputid', 'pre-id-preact')
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-id"]')
+    t.equal(el.control!.id, 'pre-id-host',
+        'AC4.3 the host id is the input id')
+    t.ok(!el.control!.hasAttribute('inputid'),
+        'AC4.3 inputid is not on the input')
+    t.ok(!el.hasAttribute('inputid'),
+        'AC4.3 inputid is removed from the host')
+})
+
+test('a host id wins over inputid when label renders early', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-id-label')
+    el.setAttribute('id', 'pre-id-label-host')
+    el.setAttribute('inputid', 'pre-id-label-preact')
+    // a label makes the element render during upgrade, before
+    // connectedCallback. build() takes the host id at that point,
+    // so the id is no longer on the host.
+    el.setAttribute('label', 'Early id')
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-id-label"]')
+    const input = el.control!
+    t.equal(input.id, 'pre-id-label-host',
+        'AC4.3 the host id is the input id')
+    t.equal(el.querySelector('label')?.htmlFor, 'pre-id-label-host',
+        'AC4.3 the label points at the host id')
+    t.ok(!input.hasAttribute('inputid'),
+        'AC4.3 inputid is not on the input')
+    t.ok(!el.hasAttribute('inputid'),
+        'AC4.3 inputid is removed from the host')
+})
+
+test('an inputId property wins over a Preact inputid attribute', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-prop-id')
+    el.inputId = 'prop-id'
+    el.setAttribute('inputid', 'attr-id')
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-prop-id"]')
+    const input = el.control!
+    t.equal(input.id, 'prop-id',
+        'the inputId property sets the input id')
+    t.ok(!input.hasAttribute('inputid'),
+        'inputid is not on the input')
+    t.ok(!el.hasAttribute('inputid'),
+        'inputid is removed from the host')
+})
+
+test('an app-rendered input is adopted when the host upgrades', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-hydrate')
+    el.setAttribute('inputid', 'attr-hydrate-id')
+    el.setAttribute('controlattributes', '[object Object]')
+    el.controlAttributes = { 'aria-invalid': 'true' }
+    el.value = 'app-value'
+    el.disabled = true
+    // the app renders the inner markup before the element is defined
+    el.appendChild(appMarkup('app-hydrate-id'))
+    const input = el.querySelector('input')!
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-hydrate"]')
+    t.equal(el.control, input,
+        'the app input is adopted, not replaced')
+    t.equal(input.getAttribute('aria-invalid'), 'true',
+        'controlAttributes reaches the app input')
+    t.equal(input.value, 'app-value',
+        'value reaches the app input')
+    t.ok(input.disabled, 'disabled reaches the app input')
+    t.equal(input.id, 'attr-hydrate-id',
+        'the inputid attribute sets the app input id')
+    t.ok(!el.hasAttribute('controlattributes'),
+        'controlattributes is removed from the host')
+    t.ok(!el.hasAttribute('inputid'),
+        'inputid is removed from the host')
+    t.ok(!input.hasAttribute('controlattributes'),
+        'controlattributes is not forwarded to the app input')
+    t.ok(!input.hasAttribute('inputid'),
+        'inputid is not forwarded to the app input')
+
+    el.controlAttributes = {}
+    t.ok(!input.hasAttribute('aria-invalid'),
+        'a later controlAttributes call removes aria-invalid')
 })
 
 test('all done', () => {
