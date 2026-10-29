@@ -22,6 +22,16 @@ function appMarkup (inputId:string):HTMLDivElement {
     return wrapper
 }
 
+/**
+ * A host that is not upgraded yet, like one a framework rendered before
+ * the element was defined. Appending it to the page adopts and
+ * upgrades it.
+ */
+function notUpgraded ():SubstrateInput {
+    const doc = document.implementation.createHTMLDocument('')
+    return doc.createElement('substrate-input') as SubstrateInput
+}
+
 test('should find the element', async t => {
     document.body.innerHTML += `
         <substrate-input
@@ -733,6 +743,85 @@ test('a host aria-* takes the name from controlAttributes', async t => {
     el.controlAttributes = { 'aria-label': 'prop' }
     t.equal(el.control!.getAttribute('aria-label'), 'prop',
         'listing the name again takes it back')
+})
+
+test('properties set before upgrade reach the input', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-upgrade')
+    el.controlAttributes = { 'aria-invalid': 'true' }
+    el.inputId = 'pre-upgrade-id'
+    el.value = 'early'
+    el.label = 'Early'
+    el.disabled = true
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-upgrade"]')
+    const input = el.control!
+    t.equal(input.getAttribute('aria-invalid'), 'true',
+        'AC3.1 controlAttributes reaches the input')
+    t.equal(input.id, 'pre-upgrade-id', 'AC3.2 inputId reaches the input')
+    t.equal(input.value, 'early', 'AC3.3 value reaches the input')
+    t.equal(el.querySelector('label')?.htmlFor, 'pre-upgrade-id',
+        'AC3.4 the label points at the input')
+    t.ok(input.disabled, 'AC3.5 disabled reaches the input')
+
+    el.controlAttributes = {}
+    t.ok(!input.hasAttribute('aria-invalid'),
+        'AC3.6 a setter call after upgrade removes aria-invalid')
+
+    el.remove()
+    document.body.appendChild(el)
+    t.equal(el.control, input, 'reconnect keeps the same input')
+    t.equal(el.control!.id, 'pre-upgrade-id',
+        'reconnect keeps the input id')
+})
+
+test('Preact attributes set before upgrade are not forwarded', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-preact')
+    el.setAttribute('controlattributes', '[object Object]')
+    el.setAttribute('inputid', 'pre-preact-id')
+    // a label makes the element render during upgrade, before
+    // connectedCallback
+    el.setAttribute('label', 'Preact')
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-preact"]')
+    const input = el.control!
+    t.ok(!input.hasAttribute('controlattributes'),
+        'AC4.1 controlattributes is not on the input')
+    t.ok(!el.hasAttribute('controlattributes'),
+        'AC4.1 controlattributes is removed from the host')
+    t.ok(!input.hasAttribute('inputid'),
+        'AC4.2 inputid is not on the input')
+    t.ok(!el.hasAttribute('inputid'),
+        'AC4.2 inputid is removed from the host')
+    t.equal(input.id, 'pre-preact-id',
+        'AC4.2 the inputid value becomes the input id')
+    t.equal(el.querySelector('label')?.htmlFor, 'pre-preact-id',
+        'AC4.2 the label follows the input id')
+})
+
+test('a host id wins over a Preact inputid', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-id')
+    el.setAttribute('id', 'pre-id-host')
+    el.setAttribute('inputid', 'pre-id-preact')
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-id"]')
+    t.equal(el.control!.id, 'pre-id-host',
+        'AC4.3 the host id is the input id')
+    t.ok(!el.control!.hasAttribute('inputid'),
+        'AC4.3 inputid is not on the input')
+    t.ok(!el.hasAttribute('inputid'),
+        'AC4.3 inputid is removed from the host')
 })
 
 test('all done', () => {

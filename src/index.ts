@@ -21,6 +21,24 @@ declare global {
     }
 }
 
+/**
+ * Properties a page or framework can set before this element is
+ * defined. `upgradeProperties` runs them through their setters.
+ */
+const UPGRADED_PROPERTIES = [
+    'controlAttributes',
+    'inputId',
+    'value',
+    'label',
+    'disabled'
+]
+
+/**
+ * What Preact writes for the two properties that have no attribute of
+ * their own, when it renders before this element is defined.
+ */
+const PROPERTY_ATTRIBUTES = ['controlattributes', 'inputid']
+
 export class SubstrateInput extends WebComponent.create('substrate-input') {
     static TAG = 'substrate-input'
     static INPUT_ATTRIBUTES = INPUT_ATTRIBUTES
@@ -112,7 +130,33 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         }
     }
 
+    /**
+     * Re-set properties that were set before this element was
+     * defined, so they go through the setters, and take over the
+     * attributes Preact writes for them.
+     */
+    upgradeProperties ():void {
+        for (const name of UPGRADED_PROPERTIES) {
+            if (!Object.hasOwn(this, name)) continue
+            const value = Reflect.get(this, name)
+            Reflect.deleteProperty(this, name)
+            Reflect.set(this, name, value)
+        }
+
+        const inputId = this.getAttribute('inputid')
+        for (const name of PROPERTY_ATTRIBUTES) this.removeAttribute(name)
+        // an id given another way wins
+        if (
+            inputId !== null &&
+            this._inputId === null &&
+            !this.hasAttribute('id')
+        ) {
+            this.inputId = inputId
+        }
+    }
+
     connectedCallback () {
+        this.upgradeProperties()
         this.render()
     }
 
@@ -316,7 +360,11 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
         const label = this.getAttribute('label')
         const name = this.getAttribute('name')
         const forwardedAttributes = Array.from(this.attributes)
-            .filter(attr => attr.name !== 'label' && attr.name !== 'id')
+            .filter(attr => (
+                attr.name !== 'label' &&
+                attr.name !== 'id' &&
+                !PROPERTY_ATTRIBUTES.includes(attr.name)
+            ))
 
         const classes = (this.getAttribute('class') ?? '').split(' ')
             .concat(['substrate', 'input', name || ''])
