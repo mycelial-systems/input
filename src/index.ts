@@ -184,11 +184,22 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
             return
         }
 
-        const applied:string[] = []
-        for (const [name, value] of Object.entries(this._controlAttributes)) {
+        // Names are lowercased. A later key replaces an earlier one
+        // with the same lowercased name.
+        const values = new Map<string, string|null>()
+        for (const [key, value] of Object.entries(this._controlAttributes)) {
+            const name = key.toLowerCase()
             // `id` goes through `inputId`
             if (name === 'id' || !isMoved(name)) continue
-            const attrValue = toAttributeValue(name, value)
+            values.set(name, toAttributeValue(name, value))
+        }
+
+        for (const name of this.appliedControlAttributes) {
+            if (values.get(name) == null) input.removeAttribute(name)
+        }
+
+        const applied:string[] = []
+        for (const [name, attrValue] of values) {
             if (attrValue === null) continue
             try {
                 input.setAttribute(name, attrValue)
@@ -196,10 +207,6 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
             } catch (_err) {
                 // skip names setAttribute rejects
             }
-        }
-
-        for (const name of this.appliedControlAttributes) {
-            if (!applied.includes(name)) input.removeAttribute(name)
         }
         this.appliedControlAttributes = applied
     }

@@ -683,6 +683,37 @@ test('controlAttributes follows a swapped inner input', async t => {
         'the app attribute on the new input stays')
 })
 
+test('controlAttributes lowercases names', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-case"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-case"]'
+    ) as SubstrateInput
+
+    el.controlAttributes = { tabIndex: -1, autoFocus: true }
+    t.equal(el.control!.getAttribute('tabindex'), '-1',
+        'tabIndex lands as tabindex')
+    t.equal(el.control!.getAttribute('autofocus'), '',
+        'autoFocus lands as autofocus')
+
+    const id = el.control!.id
+    el.controlAttributes = { ID: 'nope' }
+    t.equal(el.control!.id, id, 'ID is still ignored')
+
+    el.controlAttributes = { 'aria-label': 'a' }
+    el.controlAttributes = { 'aria-Label': 'b' }
+    t.equal(el.control!.getAttribute('aria-label'), 'b',
+        'a case change keeps the attribute, with the new value')
+
+    el.controlAttributes = { 'aria-label': 'a', 'aria-Label': 'b' }
+    t.equal(el.control!.getAttribute('aria-label'), 'b',
+        'when two keys lowercase the same, the later key wins')
+
+    el.controlAttributes = {}
+    t.ok(!el.control!.hasAttribute('aria-label'),
+        'an empty set removes aria-label')
+})
+
 test('all done', () => {
     // @ts-expect-error tests
     window.testsFinished = true
