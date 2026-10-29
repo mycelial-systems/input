@@ -824,6 +824,50 @@ test('a host id wins over a Preact inputid', async t => {
         'AC4.3 inputid is removed from the host')
 })
 
+test('a host id wins over inputid when label renders early', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-id-label')
+    el.setAttribute('id', 'pre-id-label-host')
+    el.setAttribute('inputid', 'pre-id-label-preact')
+    // a label makes the element render during upgrade, before
+    // connectedCallback. build() takes the host id at that point,
+    // so the id is no longer on the host.
+    el.setAttribute('label', 'Early id')
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-id-label"]')
+    const input = el.control!
+    t.equal(input.id, 'pre-id-label-host',
+        'AC4.3 the host id is the input id')
+    t.equal(el.querySelector('label')?.htmlFor, 'pre-id-label-host',
+        'AC4.3 the label points at the host id')
+    t.ok(!input.hasAttribute('inputid'),
+        'AC4.3 inputid is not on the input')
+    t.ok(!el.hasAttribute('inputid'),
+        'AC4.3 inputid is removed from the host')
+})
+
+test('an inputId property wins over a Preact inputid attribute', async t => {
+    const el = notUpgraded()
+    t.ok(!(el instanceof customElements.get('substrate-input')!),
+        'precondition: the host is not upgraded')
+    el.setAttribute('name', 'pre-prop-id')
+    el.inputId = 'prop-id'
+    el.setAttribute('inputid', 'attr-id')
+
+    document.body.appendChild(el)
+    await waitFor('substrate-input[name="pre-prop-id"]')
+    const input = el.control!
+    t.equal(input.id, 'prop-id',
+        'the inputId property sets the input id')
+    t.ok(!input.hasAttribute('inputid'),
+        'inputid is not on the input')
+    t.ok(!el.hasAttribute('inputid'),
+        'inputid is removed from the host')
+})
+
 test('all done', () => {
     // @ts-expect-error tests
     window.testsFinished = true
