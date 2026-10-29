@@ -714,6 +714,27 @@ test('controlAttributes lowercases names', async t => {
         'an empty set removes aria-label')
 })
 
+test('a host aria-* takes the name from controlAttributes', async t => {
+    document.body.innerHTML +=
+        '<substrate-input name="ca-host"></substrate-input>'
+    const el = await waitFor(
+        'substrate-input[name="ca-host"]'
+    ) as SubstrateInput
+
+    el.controlAttributes = { 'aria-label': 'prop' }
+    el.setAttribute('aria-label', 'host')
+    t.equal(el.control!.getAttribute('aria-label'), 'host',
+        'the host value moves to the input')
+
+    el.controlAttributes = {}
+    t.equal(el.control!.getAttribute('aria-label'), 'host',
+        'a later list without the name keeps the host value')
+
+    el.controlAttributes = { 'aria-label': 'prop' }
+    t.equal(el.control!.getAttribute('aria-label'), 'prop',
+        'listing the name again takes it back')
+})
+
 test('all done', () => {
     // @ts-expect-error tests
     window.testsFinished = true

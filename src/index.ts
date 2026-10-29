@@ -74,6 +74,9 @@ export class SubstrateInput extends WebComponent.create('substrate-input') {
             this.inputId = newValue
         } else {
             forwardAttribute(input, name, newValue)
+            // the host write now owns the name
+            this.appliedControlAttributes = this.appliedControlAttributes
+                .filter(applied => applied !== name)
         }
         this.removeAttribute(name)
     }
