@@ -236,6 +236,12 @@ the element renders.
 | `controlAttributes` | The inner input's `aria-*`, `tabindex`, and `autofocus` attributes, as an object. See [below](#controlattributes). |
 | `label` | Sets or removes the `label` attribute. |
 
+`value`, `disabled`, `inputId`, `controlAttributes`, and `label` can be
+set before the element is defined. They apply when it upgrades. A
+framework that renders before the definition loads, such as Preact, is
+handled too. That includes the `controlattributes` and `inputid`
+attributes Preact writes in that case.
+
 #### `controlAttributes`
 
 Use this property to set and clear the inner input's `aria-*`,
