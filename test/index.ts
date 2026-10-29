@@ -874,6 +874,7 @@ test('an app-rendered input is adopted when the host upgrades', async t => {
         'precondition: the host is not upgraded')
     el.setAttribute('name', 'pre-hydrate')
     el.setAttribute('inputid', 'attr-hydrate-id')
+    el.setAttribute('controlattributes', '[object Object]')
     el.controlAttributes = { 'aria-invalid': 'true' }
     el.value = 'app-value'
     el.disabled = true
@@ -896,6 +897,10 @@ test('an app-rendered input is adopted when the host upgrades', async t => {
         'controlattributes is removed from the host')
     t.ok(!el.hasAttribute('inputid'),
         'inputid is removed from the host')
+    t.ok(!input.hasAttribute('controlattributes'),
+        'controlattributes is not forwarded to the app input')
+    t.ok(!input.hasAttribute('inputid'),
+        'inputid is not forwarded to the app input')
 
     el.controlAttributes = {}
     t.ok(!input.hasAttribute('aria-invalid'),
